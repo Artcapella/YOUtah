@@ -1,15 +1,16 @@
-# Node
+# Local Node dependencies (the legacy Node example has been removed, but retain this
+# guard for editors or future tooling).
 node_modules/
 
 # Python
-.venv
+.venv/
+.venv312/
 __pycache__/
 *.py[cod]
 .pytest_cache/
 
 # environment and platform secrets
-.env
-.env.local
+.env*
 .env*.local
 .vercel
 
@@ -20,10 +21,7 @@ supabase/.branches
 # misc
 *.log
 .DS_Store
-coverage
-
-.vercel
-.env*
+coverage/
 
 # Model training data: EPA AQS downloads and exported CSVs (regenerable, large)
 data/

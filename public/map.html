@@ -83,6 +83,10 @@ a.btn{color:var(--ink);text-decoration:none}
 #fabs{position:fixed;z-index:25;right:12px;top:70px;display:flex;flex-direction:column;gap:8px}
 .fab{width:44px;height:44px;border-radius:12px;border:1px solid var(--line);background:rgba(15,38,40,.92);font-weight:700;font-size:14px;display:grid;place-items:center;box-shadow:var(--shadow)}
 .fab.on{background:var(--glacier);color:var(--deeper)}
+#viewSwitch{display:grid;grid-template-columns:repeat(2,1fr);width:112px;padding:3px;border-radius:12px}
+#viewSwitch a{padding:7px 4px;border-radius:8px;color:var(--ink-dim);font-size:11px;font-weight:700;text-align:center;text-decoration:none}
+#viewSwitch a:hover{background:rgba(255,255,255,.09);color:var(--ink)}
+#viewSwitch a.active{background:var(--glacier);color:var(--deeper)}
 
 /* ---------- panel (left sidebar desktop / bottom sheet mobile) ---------- */
 .sheet{position:fixed;z-index:20;display:flex;flex-direction:column;border-radius:var(--r);overflow:hidden}
@@ -236,6 +240,10 @@ body.detail-open #inv{right:calc(var(--detail-w) + 24px)}
 </header>
 
 <div id="fabs">
+  <nav id="viewSwitch" class="glass" aria-label="Map view">
+    <a href="/map/simple">Simple</a>
+    <a class="active" href="/map" aria-current="page">Advanced</a>
+  </nav>
   <button class="fab" id="fab3d" title="Toggle 2D / 3D terrain" aria-label="Toggle 3D terrain">3D</button>
   <button class="fab" id="fabLocate" title="My location" aria-label="My location">◎</button>
   <button class="fab" id="fabSuggest" title="Suggest a spot" aria-label="Suggest a spot" data-i18n-title="suggest">＋</button>
@@ -413,7 +421,7 @@ const DATA = {
   ],
   events: [
     P('firstfri','First Friday Art Stroll — 25th Street',41.2208,-111.9750,{...ev(18,0,0,3.5),price:0,pop:.7,cat:'Art',venue:'Historic 25th St, Ogden',src:'ticketmaster',personas:['visitor','newcomer','cheap'],d:'Galleries open late on Ogden\'s once-notorious Prohibition-era street.'}),
-    P('hockey','NHL hockey night',40.7683,-111.9011,{...ev(19,0,0,2.75),price:45,pop:.95,cat:'Sports',venue:'Delta Center',src:'ticketmaster',personas:['visitor']}),
+    P('hockey','NHL hockey night',40.7683,-111.9011,{ ...ev(19,0,0,2.75), pop:.95, cat:'Sports', venue:'Delta Center', src:'ticketmaster', ticket_url:'https://www.ticketmaster.com/', personas:['visitor'] }),
     P('improv','Late-night improv',40.7660,-111.9020,{...ev(21,30,0,1.5),price:15,pop:.55,cat:'Comedy',venue:'The Gateway',src:'ticketmaster',personas:['student','newcomer']}),
     P('mixer','International student mixer',40.7650,-111.8460,{...ev(19,0,0,3),price:0,pop:.6,cat:'Community',venue:'A. Ray Olpin Union, U of U',src:'campus',personas:['student','newcomer','cheap'],d:'Free food, language tables (中文 · Español · 한국어), and club sign-ups.'}),
     P('swing','Swing dance night',40.7235,-111.8580,{...ev(20,0,0,3),price:8,pop:.5,cat:'Dance',venue:'Sugar House',src:'ticketmaster',personas:['newcomer','student','cheap'],d:'Beginner lesson at 8, social dance after. No partner needed.'}),
@@ -1448,6 +1456,7 @@ function renderDetail(it) {
     ${it.d ? `<p style="margin:6px 0 4px;line-height:1.45">${esc(it.d)}</p>` : ''}
     <dl class="facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
     <div class="actions">
+      ${it.layer === 'events' && /^https?:\/\//i.test(it.ticket_url || it.source_url || it.url || '') ? `<a class="btn primary" href="${esc(it.ticket_url || it.source_url || it.url)}" target="_blank" rel="noopener noreferrer"> ↗ Visit Event Website </a>` : ''}
       ${isPlace || it.layer === 'events' ? `<button class="btn ${inPlan ? '' : 'primary'}" id="dPlan">${inPlan ? '✓ In plan' : '＋ ' + t('addPlan')}</button>` : ''}
       <a class="btn" style="text-decoration:none" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${it.lat},${it.lng}&travelmode=transit">${t('directions')}</a>
       <button class="btn" id="dShare">${t('share')}</button>

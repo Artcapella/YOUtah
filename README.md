@@ -6,6 +6,7 @@ A Vercel-ready **FastAPI/Python** application with a Supabase-backed discovery d
 
 - Responsive dashboard shell with an interactive MapLibre map, filters, featured events, Utah stories, and source-status UI.
 - A full-screen map hub at **`/map`** (`public/map.html`, demo data for now) with MapTiler 3D terrain and contours, layers, trip planning, and an inversion view. On Vercel the CDN serves it through the `/map` rewrite in `vercel.json`; locally `app.py` serves it. Its MapTiler key is a browser key: restrict its allowed origins in the MapTiler dashboard.
+- A focused **`/map/simple`** alternative for everyday place finding: a north-up, 2D MapTiler street map with search, category filters, source-backed pins, and an optional location control. The advanced 3D map remains at `/map`.
 - Python FastAPI API, Pydantic domain models, and a working NWS server-side adapter with mock-safe fallbacks.
 - A deterministic **Escape the Inversion** recommendation route that is ready to receive Utah DAQ, UDOT, UTA, elevation, and trailhead data.
 - Supabase/Postgres schema, Row Level Security, PostGIS geometry columns, provenance, ingestion-run logging, and seed data.
