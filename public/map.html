@@ -1463,7 +1463,7 @@ function renderDetail(it) {
     ${it.d ? `<p style="margin:6px 0 4px;line-height:1.45">${esc(it.d)}</p>` : ''}
     <dl class="facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
     <div class="actions">
-      ${it.layer === 'events' && /^https?:\/\//i.test(it.ticket_url || it.source_url || it.url || '') ? `<a class="btn primary" href="${esc(it.ticket_url || it.source_url || it.url)}" target="_blank" rel="noopener noreferrer"> ↗ Visit Event Website </a>` : ''}
+      ${it.layer === 'events' ? (u => `<a class="btn primary" href="${esc(/^https?:\/\//i.test(u) ? u : 'https://www.ticketmaster.com/')}" target="_blank" rel="noopener noreferrer">↗ Visit Event Website</a>`)(it.ticket_url || it.source_url || it.url || '') : ''}
       ${isPlace || it.layer === 'events' ? `<button class="btn ${inPlan ? '' : 'primary'}" id="dPlan">${inPlan ? '✓ In plan' : '＋ ' + t('addPlan')}</button>` : ''}
       <a class="btn" style="text-decoration:none" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${it.lat},${it.lng}&travelmode=transit">${t('directions')}</a>
       <button class="btn" id="dShare">${t('share')}</button>

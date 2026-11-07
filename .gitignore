@@ -27,3 +27,4 @@ coverage/
 data/
 
 .venv312/
+.venv312_backup/

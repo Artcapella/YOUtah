@@ -473,9 +473,8 @@ function configureInteractions() {
 
 async function initialiseMap() {
   const config = await fetch(API.config).then((response) => response.ok ? response.json() : {}).catch(() => ({}));
-  const style = config.maptilerKey
-    ? `https://api.maptiler.com/maps/streets-v2/style.json?key=${config.maptilerKey}`
-    : "https://demotiles.maplibre.org/style.json";
+  const key = config.maptilerKey || "ZVzYn0DX2lp5DAYTDqOu";
+  const style = `https://api.maptiler.com/maps/streets-v2/style.json?key=${key}`;
   map = new maplibregl.Map({
     container: "simple-map",
     style,
