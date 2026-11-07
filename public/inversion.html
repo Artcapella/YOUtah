@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#071d1f" />
+    <meta name="description" content="Is the Salt Lake Valley smoggy today, and where can you hike in clean air?" />
+    <title>Escape the Inversion · Comprehensive Utah</title>
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.2.0/dist/maplibre-gl.css" />
+    <link rel="stylesheet" href="/assets/styles.css" />
+    <link rel="stylesheet" href="/assets/inversion.css" />
+  </head>
+  <body>
+    <main>
+      <nav class="topbar shell" aria-label="Primary navigation">
+        <a class="brand" href="/" aria-label="Comprehensive Utah home">
+          <span class="brand-mark">⌁</span>
+          <span>comprehensive<br /><strong>utah</strong></span>
+        </a>
+        <div class="nav-links">
+          <a href="/#discover">Discover</a>
+          <a href="/inversion" aria-current="page">Inversion map</a>
+          <a href="/#sources">Data sources</a>
+        </div>
+      </nav>
+
+      <header class="shell inv-header">
+        <p class="eyebrow">Made for this particular valley</p>
+        <h1 class="inv-title">Escape the inversion.</h1>
+        <p class="hero-text">Is the valley smoggy today, and where can you hike in clean air?</p>
+
+        <div class="inv-controls">
+          <div class="segmented" role="group" aria-label="Data mode">
+            <button class="seg active" data-mode="live">Live now</button>
+            <button class="seg" data-mode="demo">Inversion-day demo</button>
+          </div>
+          <label class="inv-field">
+            <span>Starting point</span>
+            <select id="start">
+              <optgroup label="Salt Lake &amp; Wasatch Front">
+                <option value="40.7649,-111.8421">University of Utah</option>
+                <option value="40.7704,-111.8919">Downtown Salt Lake City</option>
+                <option value="40.7899,-111.9791">SLC International Airport</option>
+                <option value="40.8894,-111.8808">Bountiful</option>
+                <option value="41.0602,-111.9711">Layton</option>
+                <option value="41.2230,-111.9738">Ogden</option>
+                <option value="40.5649,-111.8389">Sandy</option>
+                <option value="40.3916,-111.8508">Lehi</option>
+                <option value="40.2969,-111.6946">Orem</option>
+                <option value="40.2518,-111.6493">Provo (BYU)</option>
+                <option value="40.1150,-111.6549">Spanish Fork</option>
+                <option value="40.5308,-112.2983">Tooele</option>
+              </optgroup>
+              <optgroup label="Mountains &amp; Northern Utah">
+                <option value="40.5830,-111.6556">Alta / Snowbird</option>
+                <option value="40.6461,-111.4980">Park City</option>
+                <option value="40.5069,-111.4132">Heber City</option>
+                <option value="41.7452,-111.8097">Logan (USU)</option>
+                <option value="41.5102,-112.0155">Brigham City</option>
+                <option value="41.9419,-111.3966">Bear Lake (Garden City)</option>
+                <option value="40.4555,-109.5287">Vernal</option>
+                <option value="40.4404,-109.3008">Dinosaur National Monument</option>
+                <option value="40.9269,-109.3912">Flaming Gorge (Dutch John)</option>
+              </optgroup>
+              <optgroup label="Central Utah">
+                <option value="39.7102,-111.8355">Nephi</option>
+                <option value="39.5994,-110.8107">Price</option>
+                <option value="38.9950,-110.1598">Green River</option>
+                <option value="38.5733,-110.7071">Goblin Valley State Park</option>
+                <option value="38.7725,-112.0841">Richfield</option>
+                <option value="38.9689,-112.3233">Fillmore</option>
+                <option value="39.3522,-112.5772">Delta</option>
+                <option value="38.2917,-111.2615">Capitol Reef National Park</option>
+              </optgroup>
+              <optgroup label="Southern Utah &amp; National Parks">
+                <option value="38.5733,-109.5498">Moab</option>
+                <option value="38.6165,-109.6197">Arches National Park</option>
+                <option value="38.4598,-109.8210">Canyonlands (Island in the Sky)</option>
+                <option value="37.0965,-113.5684">St. George</option>
+                <option value="37.6775,-113.0619">Cedar City</option>
+                <option value="37.1889,-112.9986">Zion National Park (Springdale)</option>
+                <option value="37.6403,-112.1696">Bryce Canyon National Park</option>
+                <option value="37.0475,-112.5263">Kanab</option>
+                <option value="37.7703,-111.6021">Escalante</option>
+                <option value="37.5153,-110.7262">Lake Powell (Bullfrog)</option>
+                <option value="37.0772,-111.6618">Lake Powell (Big Water)</option>
+                <option value="37.6244,-109.4782">Blanding</option>
+                <option value="37.2836,-109.5526">Bluff</option>
+                <option value="37.0042,-110.1735">Monument Valley</option>
+              </optgroup>
+              <option value="address">Enter an address…</option>
+            </select>
+          </label>
+          <form class="inv-field address hidden" id="address-form">
+            <span>Address</span>
+            <div class="address-row"><input id="address" placeholder="201 Presidents Cir, Salt Lake City, UT" /><button class="button primary" type="submit">Go</button></div>
+            <small id="address-msg"></small>
+          </form>
+        </div>
+      </header>
+
+      <section class="shell">
+        <div class="inv-banner" id="banner"><h2 id="banner-title">Loading live conditions…</h2><p id="banner-body">Reading ~70 weather stations and the valley air monitors.</p></div>
+      </section>
+
+      <section class="shell">
+        <div class="map-frame inv-map-frame"><div id="inv-map" aria-label="Smog map with trailheads"></div></div>
+        <div class="legend">
+          <span><i class="swatch smog"></i>Estimated smog (yellow → orange → red)</span>
+          <span><i class="dot go"></i>Go</span>
+          <span><i class="dot caution"></i>Caution</span>
+          <span><i class="dot skip"></i>Skip</span>
+          <span><i class="dot monitor"></i>Air monitor: number = PM2.5 µg/m³ (green good · yellow moderate · orange/red unhealthy)</span>
+          <span><i class="dot start"></i>Starting point</span>
+        </div>
+        <p class="fineprint muted">Smog shading covers the Wasatch Front, where there are enough air monitors: spread from the monitors with a Gaussian kernel, faded where none is nearby, and cut off above the lid using terrain. Elsewhere in Utah the page uses the nearest monitor and nearby weather stations. <span id="demo-note"></span></p>
+      </section>
+
+      <section class="shell steps inv-block">
+        <div class="step-card"><span class="step-n">1 · Valley air</span><b id="m-pm">--</b><small id="m-pm-sub">PM2.5 µg/m³</small></div>
+        <div class="step-card"><span class="step-n">2 · Smog lid</span><b id="m-lid">--</b><small id="m-lid-sub">&nbsp;</small></div>
+        <div class="step-card"><span class="step-n">3 · Trailheads with clean air</span><b id="m-go">--</b><small>above the lid, or anywhere on a clean day</small></div>
+      </section>
+
+      <section class="shell inv-block">
+        <div class="section-heading"><div><p class="eyebrow">Best picks</p><h2 id="picks-title">Near University of Utah</h2></div><p>Trailheads within 80 km. Distances are straight-line. Check road and trail conditions before you go.</p></div>
+        <div class="picks" id="picks"></div>
+      </section>
+
+      <section class="shell inv-block">
+        <div class="section-heading"><div><p class="eyebrow">Next 7 days</p><h2>Will the valley get trapped?</h2></div><p>Lid height ≈ how high valley air can mix in the afternoon (Open-Meteo forecast). Lower lid = more smog trapped. Days 1–3 are a forecast; days 4–7 are only a trend.</p></div>
+        <div class="outlook" id="outlook"><p class="muted">Loading forecast…</p></div>
+      </section>
+
+      <section class="shell details inv-block">
+        <details>
+          <summary>All trailheads</summary>
+          <div class="table-wrap"><table id="th-table"><thead><tr><th>Verdict</th><th>Trailhead</th><th>Elevation</th><th>Distance</th><th>Why</th><th></th></tr></thead><tbody></tbody></table></div>
+          <div class="pager"><button class="button secondary" id="prev" type="button">← Previous</button><span id="page-info"></span><button class="button secondary" id="next" type="button">Next →</button></div>
+        </details>
+      </section>
+
+      <section class="learn">
+        <div class="shell">
+          <p class="eyebrow">New to Utah?</p>
+          <h2>What is an inversion?</h2>
+          <div class="learn-grid">
+            <div>
+              <p><b>Normal day:</b> air near the ground is warmest. Warm air rises and carries pollution away. It gets colder as you climb.</p>
+              <p><b>Inversion day:</b> a warm layer sits <em>on top of</em> cold valley air, like a lid on a pot. Cold air can't rise, so car exhaust and smoke pile up underneath, day after day.</p>
+              <p>Salt Lake City sits in a bowl of mountains, so in winter (Dec–Feb, calm and clear days) the smog can stay for a week or more.</p>
+              <p><b>The local trick:</b> drive up into the canyons and you pop out above the smog into blue sky.</p>
+            </div>
+            <div id="illustration"></div>
+          </div>
+
+          <h2 class="why-title">Why it matters</h2>
+          <div class="why-grid">
+            <div class="why-card"><h3>Health</h3><p>Fine particles (PM2.5) go deep into the lungs. Exercising in smog means breathing in much more of it — the opposite of why people go hiking.</p></div>
+            <div class="why-card"><h3>Visitors don't know</h3><p>Locals know to head up the canyons. Students, tourists and newcomers just see grey skies and either stay inside or hike in the smog.</p></div>
+            <div class="why-card"><h3>The answer is nearby</h3><p>Clean air is often a short drive up. The hard part is knowing <b>how high</b> to go — that's what this page estimates from live weather stations.</p></div>
+          </div>
+        </div>
+      </section>
+    </main>
+    <footer class="shell footer"><span id="disclaimer">Inversion height is an estimate for visitors, not an official forecast or a safety clearance.</span><a href="/">← Back to Comprehensive Utah</a></footer>
+    <script src="https://unpkg.com/maplibre-gl@5.2.0/dist/maplibre-gl.js"></script>
+    <script src="/assets/inversion.js" defer></script>
+  </body>
+</html>

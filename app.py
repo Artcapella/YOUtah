@@ -16,6 +16,7 @@ from backend.providers.events import search_ticketmaster_events
 from backend.services.dashboard import build_dashboard, build_inversion_recommendations
 from backend.services.event_recommendations import recommend_events
 from backend.services.ingest import ingest_all_places, run_ingest
+from backend.inversion import service as inversion_service, sources as inversion_sources
 
 ROOT_DIR = Path(__file__).resolve().parent
 PUBLIC_DIR = ROOT_DIR / "public"
@@ -45,6 +46,12 @@ async def homepage() -> FileResponse:
 async def map_page() -> FileResponse:
     """Full-screen map hub. On Vercel the CDN serves public/map.html via the vercel.json rewrite."""
     return FileResponse(PUBLIC_DIR / "map.html")
+
+
+@app.get("/map/simple", include_in_schema=False)
+async def simple_map_page() -> FileResponse:
+    """A focused, north-up street map for everyday place discovery."""
+    return FileResponse(PUBLIC_DIR / "map-simple.html")
 
 
 @app.get("/api/health")
@@ -80,6 +87,39 @@ async def escape_inversion(
         lng: float = Query(default=-111.8910, ge=-180, le=180),
 ) -> dict:
     return (await build_inversion_recommendations(Coordinate(lat=lat, lng=lng))).model_dump(mode="json")
+
+
+@app.get("/inversion", include_in_schema=False)
+async def inversion_page() -> FileResponse:
+    return FileResponse(PUBLIC_DIR / "inversion.html")
+
+
+@app.get("/api/inversion/today")
+async def inversion_today(
+    mode: str = Query(default="live", pattern="^(live|demo)$"),
+    lat: float = Query(default=40.7649, ge=-90, le=90),
+    lng: float = Query(default=-111.8421, ge=-180, le=180),
+) -> dict:
+    return await inversion_service.today(mode, lat, lng)
+
+
+@app.get("/api/inversion/outlook")
+async def inversion_outlook(
+    lat: float = Query(default=40.7649, ge=-90, le=90),
+    lng: float = Query(default=-111.8421, ge=-180, le=180),
+) -> list[dict]:
+    try:
+        return await inversion_service.outlook(lat, lng)
+    except Exception:
+        raise HTTPException(status_code=503, detail="Forecast provider unavailable")
+
+
+@app.get("/api/geocode")
+async def geocode(address: str = Query(min_length=3, max_length=200)) -> dict:
+    hit = await inversion_sources.geocode(address)
+    if not hit:
+        raise HTTPException(status_code=404, detail="Address not found")
+    return hit
 
 
 @app.post("/api/admin/ingest")
