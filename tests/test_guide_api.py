@@ -1,9 +1,11 @@
+import asyncio
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from app import app
-from backend.guide.schemas import GuideAnswerResponse, GuideCitation, GuideSearchResponse, GuideSearchResult
+from backend.guide.schemas import GuideAnswerResponse, GuideCitation, GuideSearchRequest, GuideSearchResponse, GuideSearchResult
+from backend.guide.service import _fallback_documents
 
 
 def test_guide_answer_route_returns_citations_without_calling_a_model(monkeypatch) -> None:
@@ -72,3 +74,19 @@ def test_map_guide_keeps_persona_in_a_browser_cookie() -> None:
     assert 'const PERSONA_COOKIE = "youtah_persona"' in script
     assert "SameSite=Lax" in script
     assert "/api/guide/answer" in script
+
+
+def test_guide_request_accepts_a_salt_lake_city_coordinate() -> None:
+    request = GuideSearchRequest(query="a short hike", lat=40.7608, lng=-111.891)
+    assert request.lng == -111.891
+
+
+def test_guide_uses_demo_sources_when_live_dashboard_is_unavailable(monkeypatch) -> None:
+    async def unavailable(_point):
+        raise RuntimeError("offline")
+
+    monkeypatch.setattr("backend.guide.service.build_dashboard", unavailable)
+    documents = asyncio.run(_fallback_documents("free community", 40.7608, -111.891, None))
+
+    assert documents
+    assert any(document.source_url for document in documents)

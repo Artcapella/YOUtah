@@ -51,6 +51,29 @@ npx supabase migration new describe_change
 
 Commit the migration with the feature branch. This keeps the shared database reproducible while the team works in parallel.
 
+## AI guide and RAG
+
+The map now opens first and includes an **Ask YOUtah** guide plus a compact taste quiz. The quiz saves preference-only data (interests, pace, group, budget, access needs, and a voluntary home-base label) in the visitor's browser cookie; this project does not persist a profile or an account identifier.
+
+The guide has a useful source-backed fallback with no model key. Once OpenAI is configured, its production path is:
+
+```text
+map + cookie persona
+  → /api/guide/answer (server only)
+  → Supabase hybrid retrieval (keyword + pgvector + persona + proximity + popularity)
+  → OpenAI Responses API, optionally with live web search
+  → answer + source links returned to the browser
+```
+
+`supabase/migrations/20261107050000_guide_rag.sql` creates `guide_documents`, a derived search index. It mirrors the authoritative `places`, `events`, `advisories`, and `stories` tables; it does not replace them. Every indexed document carries its source URL and freshness timestamp. The retrieval RPC is service-role-only, so clients cannot dump the full index or embedding data.
+
+1. Push migrations: `npx supabase db push`.
+2. In Vercel, add a newly created **rotated** `OPENAI_API_KEY` only under Project Settings → Environment Variables (Production and Preview). Do not place it in a `NEXT_PUBLIC_*` variable or commit it.
+3. Leave `OPENAI_MODEL=gpt-6-astra` and `OPENAI_EMBEDDING_MODEL=text-embedding-3-small` unless you also migrate the `vector(1536)` column for a different embedding dimensionality.
+4. Add `CRON_SECRET`; the hourly `/api/cron/refresh-guide` job rebuilds derived documents and embeds a bounded batch of changed rows. Existing ingest crons keep live sources fresher than that where supported.
+
+The optional “Include live web sources” toggle uses the OpenAI Responses API web-search tool, not a separate search-provider key. The existing provider keys remain optional: MapTiler improves tiles; Ticketmaster, UDOT, RIDB, Google Places, and similar connectors each need their own account/key to move from their built-in fallback to live data.
+
 ## Deploy to Vercel
 
 1. Push the repository to GitHub.

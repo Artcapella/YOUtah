@@ -229,6 +229,36 @@ begin
      or (gd.entity_type = 'advisory' and not exists (select 1 from public.advisories a where a.id = gd.entity_id))
      or (gd.entity_type = 'story' and not exists (select 1 from public.stories st where st.id = gd.entity_id));
 
+  -- A light, privacy-safe popularity signal. It is derived only from the
+  -- existing aggregate interaction table; it does not create profiles or let a
+  -- promoted listing pay for an organic ranking boost.
+  update public.guide_documents d
+  set popularity_score = coalesce(
+    (
+      select least(
+        0.95::numeric,
+        0.25::numeric + ln(
+          1::numeric + greatest(
+            sum(case ae.event_type
+              when 'directions_requested' then 4.0
+              when 'saved' then 3.0
+              when 'detail_opened' then 1.0
+              when 'dismissed' then -0.25
+              else 0.0
+            end),
+            0.0
+          )::numeric
+        ) / 8::numeric
+      )::real
+      from public.analytics_events ae
+      where ae.entity_type = d.entity_type
+        and ae.entity_id = d.entity_id::text
+        and ae.occurred_at >= now() - interval '30 days'
+    ),
+    0.25
+  )
+  where d.entity_type in ('place', 'event');
+
   return jsonb_build_object(
     'places', places_written,
     'events', events_written,

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import TypeVar
@@ -12,9 +13,10 @@ from backend.providers.ugrc import fetch_places
 from backend.providers.uta import fetch_transit_alerts
 from backend.providers.utah_daq import fetch_air_quality
 from backend.geo import haversine_km
-from backend.seed_data import demo_sources, demo_weather, utcnow
+from backend.seed_data import demo_advisories, demo_events, demo_places, demo_sources, demo_weather, utcnow
 
 T = TypeVar("T")
+logger = logging.getLogger(__name__)
 
 # Ingested places sources without a fixed drawer entry, keyed by `sources.name`
 # (supabase/migrations/20261107040000_place_sources.sql). OSM's ODbL requires this attribution.
@@ -36,11 +38,22 @@ def place_source_health(places: list[Place]) -> list[SourceHealth]:
     ]
 
 
-async def _stored_or_provider(stored: list[T], provider: Callable[[], Awaitable[list[T]]]) -> tuple[list[T], bool]:
-    """Serve ingested Supabase rows when a lane has any; otherwise ask the provider adapter."""
+async def _stored_or_provider(
+    stored: list[T], provider: Callable[[], Awaitable[list[T]]], fallback: Callable[[], list[T]]
+) -> tuple[list[T], bool]:
+    """Serve ingested rows first, then a provider, then transparent demo records.
+
+    A dashboard should remain useful during an upstream outage; callers show those
+    records as demo rather than pretending they are live.
+    """
     if stored:
         return stored, True
-    return await provider(), False
+    try:
+        result = await provider()
+        return (result or fallback()), False
+    except Exception as error:
+        logger.warning("Provider lane unavailable; serving demo fallback: %s", type(error).__name__)
+        return fallback(), False
 
 
 async def build_dashboard(point: Coordinate) -> DashboardResponse:
@@ -63,10 +76,18 @@ async def build_dashboard(point: Coordinate) -> DashboardResponse:
     stored_other = [item for item in stored_advisories if item.kind not in {"road", "transit"}]
 
     (places, places_stored), (events, _), (road, road_stored), (transit, transit_stored) = await asyncio.gather(
-        _stored_or_provider(stored_places, fetch_places),
-        _stored_or_provider(stored_events, lambda: fetch_events(point)),
-        _stored_or_provider(stored_road, fetch_advisories),
-        _stored_or_provider(stored_transit, fetch_transit_alerts),
+        _stored_or_provider(stored_places, fetch_places, demo_places),
+        _stored_or_provider(stored_events, lambda: fetch_events(point), demo_events),
+        _stored_or_provider(
+            stored_road,
+            fetch_advisories,
+            lambda: [item for item in demo_advisories() if item.kind == "road"],
+        ),
+        _stored_or_provider(
+            stored_transit,
+            fetch_transit_alerts,
+            lambda: [item for item in demo_advisories() if item.kind == "transit"],
+        ),
     )
 
     # Lanes served from Supabase are "cached" rather than "demo" in the source drawer.
