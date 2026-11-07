@@ -9,6 +9,7 @@ A Vercel-ready **FastAPI/Python** application with a Supabase-backed discovery d
 - A deterministic **Escape the Inversion** recommendation route that is ready to receive Utah DAQ, UDOT, UTA, elevation, and trailhead data.
 - Supabase/Postgres schema, Row Level Security, PostGIS geometry columns, provenance, ingestion-run logging, and seed data.
 - Provider-adapter contracts so data work can progress independently from frontend work.
+- **Utah intelligence** (`backend/intelligence/`): a trainable Outdoor Comfort nowcast and an explainable Local Pulse score, with a leakage-aware training pipeline. See [Utah intelligence](#utah-intelligence).
 - Vercel configuration and environment-variable documentation.
 
 ## Run locally
@@ -27,10 +28,18 @@ The UI works without any API keys using transparent demo data. Add a `NEXT_PUBLI
 ## Connect Supabase
 
 1. Create a Supabase project.
-2. Install the CLI and link it: `npx supabase login && npx supabase link --project-ref <project-ref>`.
-3. Push the versioned schema: `npx supabase db push`.
-4. Copy the project URL and anon key into `.env.local`; add the service-role key only to Vercel/server environments.
-5. In Vercel, add every variable from `.env.example` under **Project Settings → Environment Variables**. The application deliberately exposes no secret keys to the browser.
+2. Copy `.env.example` to `.env.local` and fill in `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` (`sb_publishable_…`) and `SUPABASE_SECRET_KEY` (`sb_secret_…`) from **Project Settings → API Keys**. The legacy names `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are still accepted.
+3. Install the CLI and link it: `npx supabase login && npx supabase link --project-ref <project-ref>`.
+4. Push the versioned schema: `npx supabase db push`.
+5. Start the app and check `GET /api/health`: `"supabase_status": "ok"` means the schema is live and readable. `schema_missing` means step 4 hasn't run.
+6. In Vercel, add every variable from `.env.example` under **Project Settings → Environment Variables**. The application deliberately exposes no secret keys to the browser.
+
+How the backend uses Supabase (`backend/supabase_client.py`, `backend/repository.py`):
+
+- **Reads** use the publishable key, so they see only what the RLS policies expose publicly.
+- **Writes** (ingestion) use the secret key, which bypasses RLS. It is server-only and never returned to the browser.
+- The dashboard serves ingested rows for each lane (places, events, road advisories, transit advisories) and falls back to the provider adapter when a lane's table is empty or Supabase is unreachable. Lanes served from the database show as `cached` in the source drawer.
+- The new `sb_` keys need a recent `supabase-py` (the pinned 2.33.0 works). 2.13 and earlier reject them with `Invalid API key`.
 
 Schema changes belong in `supabase/migrations/`. Create a migration with:
 
@@ -51,14 +60,67 @@ Commit the migration with the feature branch. This keeps the shared database rep
 
 | Module | Owner scope | Current state |
 | --- | --- | --- |
-| `backend/providers/nws.py` | Weather, forecasts, alerts | Live adapter + fallback |
-| `backend/providers/utah_daq.py` | AQI and inversion ceiling | Typed adapter shell + demo values |
+| `backend/providers/nws.py` | Weather, forecasts, alerts | Live adapter (display + numeric model inputs) + fallback |
+| `backend/providers/utah_daq.py` | AQI and inversion ceiling | Live: 14 county stations, nearest-station AQI (EPA 2024 breakpoints). Inversion cap is still a placeholder |
 | `backend/providers/udot.py` | Roads, canyon access, traffic | Typed adapter shell + demo values |
 | `backend/providers/uta.py` | GTFS-RT transit / ski bus | Typed adapter shell + demo values |
-| `backend/providers/events.py` | Ticketmaster, Eventbrite, campus/library events | Typed adapter shell + demo values |
+| `backend/providers/events.py` | Ticketmaster, Eventbrite, campus/library events | Ticketmaster live when `TICKETMASTER_API_KEY` is set; demo values otherwise |
 | `backend/providers/ugrc.py` | Trails, places, cultural layers | Typed adapter shell + demo values |
 
 All providers return normalized Pydantic domain models from `backend/models.py`; the frontend never consumes provider-specific JSON.
+
+## Utah intelligence
+
+Two intentionally distinct products, served under `/api/intelligence` and shown in the hero card:
+
+1. **Outdoor Comfort**: a three-class (`good` / `caution` / `poor`) nowcast of the 24-hour PM2.5 band at the nearest Utah DAQ station, `horizon_hours` (default 3) ahead. A trained model is served only when an artifact has passed the training gate. Otherwise responses say `conservative_fallback` and `/api/intelligence/model-status` says why.
+2. **Local Pulse**: an explainable 0–100 appeal score from nearby events (Supabase events, then live Ticketmaster) and predicted comfort. It is never an attendance count, and demo events are never scored.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/intelligence/brief?lat=&lng=` | Comfort + Local Pulse for a point, with the station used, data freshness, and source links. |
+| `POST /api/intelligence/comfort` | Score a supplied feature vector (see `ComfortFeatures`). |
+| `POST /api/intelligence/feedback` | Privacy-safe interaction (`detail_opened`, …) stored server-side in `analytics_events`. The browser never writes the table. Place-card clicks send these. |
+| `GET /api/intelligence/model-status` | Model version, metrics, training window, or the fallback reason. |
+
+### Training pipeline
+
+Training is offline. Requests never retrain. The deployed artifact is portable JSON (`backend/intelligence/artifacts/outdoor_comfort.json`) evaluated in pure Python. scikit-learn is a training-only dependency because it would grow the Vercel bundle from about 52 MB to about 327 MB.
+
+```bash
+pip install -r requirements-ml.txt
+
+# 1. Quality-assured PM2.5, temperature and humidity for the DAQ stations from EPA AQS
+#    (no key; ~150 MB per year, cached in data/raw). DAQ sends no hourly wind to AQS, so wind
+#    is left missing there and is learned from the ingested DAQ snapshots instead.
+python scripts/backfill_aqs_history.py --years 2024 2025 2026 --out data/utah_air_history.csv
+
+# 2. Snapshots this project collected (needs the migration + ingest below). Optional until they accumulate.
+python scripts/export_training_data.py --source supabase --out data/daq_snapshots.csv
+
+# 3. Train. QA'd history first: it wins when both files hold the same station-hour.
+python scripts/train_outdoor_comfort.py --input data/utah_air_history.csv --input data/daq_snapshots.csv
+
+pytest
+```
+
+The trainer joins targets on exact timestamps, splits chronologically (60/20/20) with a purge gap, and calibrates on the validation fold. It refuses to write an artifact unless all of the following hold:
+
+- At least 200 rows and two target classes.
+- The model beats the persistence baseline on test-period accuracy without losing macro-F1.
+- The exported JSON reproduces scikit-learn's probabilities exactly.
+
+Commit the `.json` (and its `.metrics.json`) to deploy it.
+
+**Collecting training data.** `POST /api/admin/ingest` with `{"source": "utah-daq"}` and the `x-ingest-secret` header, or the daily Vercel Cron in `vercel.json` (`GET /api/cron/ingest`, `Authorization: Bearer $CRON_SECRET`). Each run:
+
+- Writes new station-hour readings to `ml_feature_snapshots`, keeping the first-seen `available_at`.
+- Logs one prediction per station to `ml_predictions`, for later comparison with what happened.
+- Records the run in `ingest_runs`.
+
+The DAQ feed keeps 10+ days of history, so a daily schedule leaves no gaps. Apply `supabase/migrations/*_intelligence.sql` first (`npx supabase db push`).
+
+Product rules: keep the official-source links and disclaimers. Present comfort as guidance, not a safety clearance. Comfort bands (≤12 / ≤35.4 µg/m³) are deliberately simpler than the official AQI shown beside them.
 
 ## Source and safety rules
 
@@ -70,7 +132,7 @@ All providers return normalized Pydantic domain models from `backend/models.py`;
 
 ## Next build targets
 
-1. Implement the Utah DAQ, UDOT, UTA, UGRC, and Ticketmaster adapters.
-2. Add a protected ingest route or scheduled function that writes normalized snapshots and `ingest_runs`.
-3. Replace demo items with database reads in `backend/services/dashboard.py`.
+1. ~~Utah DAQ and Ticketmaster adapters~~ Done. Remaining: UDOT, UTA, UGRC, and a DAQ ceilometer source for the real inversion cap.
+2. ~~Protected ingest route and schedule~~ Done for `utah-daq` (snapshots, predictions, `ingest_runs`). Remaining: the other sources.
+3. ~~Replace demo items with database reads in `backend/services/dashboard.py`.~~ Done: the dashboard reads from Supabase and falls back to providers. Remaining: weather and air snapshots from `observations`.
 4. Add source filters, language selection, and a citation drawer before expanding to a chatbot.

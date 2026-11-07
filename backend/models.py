@@ -54,6 +54,40 @@ class WeatherSnapshot(BaseModel):
     updated_at: datetime
 
 
+class AirStation(BaseModel):
+    """A Utah DAQ monitoring station. `id` is the air.utah.gov feed id; `aqs_site` the EPA AQS site id."""
+
+    id: str
+    name: str
+    county: str
+    aqs_site: str
+    coordinate: Coordinate
+    elevation_m: float
+
+
+class AirStationReading(BaseModel):
+    """One hourly station reading. Missing instrument values are None, never a sentinel."""
+
+    station_id: str
+    observed_at: datetime
+    pm25: float | None = None
+    pm25_24hr_avg: float | None = None
+    temp_f: float | None = None
+    humidity: float | None = None
+    wind_mph: float | None = None
+    wind_dir_deg: float | None = None
+
+
+class HourlyConditions(BaseModel):
+    """Numeric NWS hourly-forecast values for model features."""
+
+    starts_at: datetime
+    temperature_f: float
+    relative_humidity: float | None = None
+    wind_mph: float | None = None
+    precip_probability: float = 0
+
+
 class AirSnapshot(BaseModel):
     aqi: int
     category: str

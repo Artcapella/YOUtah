@@ -1,3 +1,4 @@
+import hmac
 from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException, Query
@@ -5,7 +6,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from backend import repository
 from backend.config import settings
+from backend.intelligence.model import model_status
+from backend.intelligence.router import router as intelligence_router
 from backend.models import Coordinate, IngestRequest
 from backend.services.dashboard import build_dashboard, build_inversion_recommendations
 from backend.services.ingest import run_ingest
@@ -40,6 +44,10 @@ async def health() -> dict:
         "status": "ok",
         "environment": settings.environment,
         "supabase_configured": settings.supabase_configured,
+        # ok | not_configured | schema_missing | error | unreachable
+        "supabase_status": await repository.check_connection(),
+        # trained_nowcast | fallback (see /api/intelligence/model-status for the reason)
+        "intelligence_model": model_status()["status"],
     }
 
 
@@ -71,9 +79,28 @@ async def ingest(
     x_ingest_secret: str | None = Header(default=None),
 ) -> dict:
     """Protected manual ingest hook. Attach this to a cron job after provider adapters are completed."""
-    if not settings.ingest_secret or x_ingest_secret != settings.ingest_secret:
+    if not _secret_matches(x_ingest_secret, settings.ingest_secret):
         raise HTTPException(status_code=401, detail="Invalid ingestion credential")
     return await run_ingest(request.source)
+
+
+@app.get("/api/cron/ingest", include_in_schema=False)
+async def scheduled_ingest(authorization: str | None = Header(default=None)) -> dict:
+    """Vercel Cron target (see vercel.json). Collects Utah DAQ snapshots for model training.
+
+    The DAQ feed keeps 10+ days of hourly history, so even a once-daily schedule is gap-free.
+    """
+    token = authorization.removeprefix("Bearer ") if authorization and authorization.startswith("Bearer ") else None
+    if not _secret_matches(token, settings.cron_secret):
+        raise HTTPException(status_code=401, detail="Invalid cron credential")
+    return await run_ingest("utah-daq")
+
+
+def _secret_matches(provided: str | None, expected: str) -> bool:
+    return bool(expected and provided and hmac.compare_digest(provided.encode(), expected.encode()))
+
+
+app.include_router(intelligence_router)
 
 
 app.mount("/assets", StaticFiles(directory=PUBLIC_DIR / "assets"), name="assets")

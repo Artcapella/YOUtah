@@ -1,3 +1,6 @@
+# Node
+node_modules/
+
 # Python
 .venv
 __pycache__/
@@ -18,3 +21,9 @@ supabase/.branches
 *.log
 .DS_Store
 coverage
+
+.vercel
+.env*
+
+# Model training data: EPA AQS downloads and exported CSVs (regenerable, large)
+data/

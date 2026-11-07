@@ -1,5 +1,8 @@
 import asyncio
+from collections.abc import Awaitable, Callable
+from typing import TypeVar
 
+from backend import repository
 from backend.models import Coordinate, DashboardResponse, InversionRecommendation, InversionResponse
 from backend.providers.events import fetch_events
 from backend.providers.nws import fetch_weather
@@ -8,6 +11,15 @@ from backend.providers.ugrc import fetch_places
 from backend.providers.uta import fetch_transit_alerts
 from backend.providers.utah_daq import fetch_air_quality
 from backend.seed_data import demo_sources, demo_weather, utcnow
+
+T = TypeVar("T")
+
+
+async def _stored_or_provider(stored: list[T], provider: Callable[[], Awaitable[list[T]]]) -> tuple[list[T], bool]:
+    """Serve ingested Supabase rows when a lane has any; otherwise ask the provider adapter."""
+    if stored:
+        return stored, True
+    return await provider(), False
 
 
 async def build_dashboard(point: Coordinate) -> DashboardResponse:
@@ -18,13 +30,34 @@ async def build_dashboard(point: Coordinate) -> DashboardResponse:
         weather = demo_weather()
         weather_state = "degraded"
 
-    air, places, events, road_advisories, transit_advisories = await asyncio.gather(
+    air, stored_places, stored_events, stored_advisories = await asyncio.gather(
         fetch_air_quality(point),
-        fetch_places(),
-        fetch_events(),
-        fetch_advisories(),
-        fetch_transit_alerts(),
+        repository.load_places(),
+        repository.load_upcoming_events(),
+        repository.load_active_advisories(),
     )
+
+    stored_road = [item for item in stored_advisories if item.kind == "road"]
+    stored_transit = [item for item in stored_advisories if item.kind == "transit"]
+    stored_other = [item for item in stored_advisories if item.kind not in {"road", "transit"}]
+
+    (places, places_stored), (events, _), (road, road_stored), (transit, transit_stored) = await asyncio.gather(
+        _stored_or_provider(stored_places, fetch_places),
+        _stored_or_provider(stored_events, lambda: fetch_events(point)),
+        _stored_or_provider(stored_road, fetch_advisories),
+        _stored_or_provider(stored_transit, fetch_transit_alerts),
+    )
+
+    # Lanes served from Supabase are "cached" rather than "demo" in the source drawer.
+    stored_lanes = {"ugrc": places_stored, "udot": road_stored, "uta": transit_stored}
+    sources = [
+        source.model_copy(update={"status": "cached"}) if stored_lanes.get(source.id) else source
+        for source in demo_sources(weather_state)
+    ]
+    sources = [
+        source.model_copy(update={"status": air.source, "updated_at": air.updated_at}) if source.id == "daq" else source
+        for source in sources
+    ]
 
     return DashboardResponse(
         generated_at=utcnow(),
@@ -32,8 +65,8 @@ async def build_dashboard(point: Coordinate) -> DashboardResponse:
         air=air,
         places=places,
         events=events,
-        advisories=[*road_advisories, *transit_advisories],
-        sources=demo_sources(weather_state),
+        advisories=[*road, *transit, *stored_other],
+        sources=sources,
     )
 
 

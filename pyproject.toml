@@ -6,3 +6,7 @@ requires-python = ">=3.11"
 
 [tool.vercel]
 entrypoint = "app:app"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

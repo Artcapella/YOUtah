@@ -1,6 +1,8 @@
 const API = {
   dashboard: "/api/dashboard",
   inversion: "/api/recommendations/escape-inversion",
+  brief: "/api/intelligence/brief",
+  feedback: "/api/intelligence/feedback",
   config: "/api/config"
 };
 
@@ -26,6 +28,26 @@ function renderConditions(data) {
   document.querySelector("#conditions-updated").textContent = `Updated ${dateText(data.generated_at)} · weather ${data.weather.source}`;
 }
 
+function renderBrief(brief) {
+  const comfort = brief.outdoor_comfort;
+  const label = document.querySelector("#comfort-label");
+  label.textContent = comfort.label[0].toUpperCase() + comfort.label.slice(1);
+  label.className = `air-state ${comfort.label}`;
+  document.querySelector("#comfort-horizon").textContent = comfort.horizon_hours;
+  document.querySelector("#pulse-score").textContent = `${brief.local_pulse.score}/100`;
+  const kind = comfort.model_kind === "trained_nowcast" ? "Trained nowcast" : "Rules estimate";
+  const station = brief.air_station;
+  document.querySelector("#brief-detail").textContent =
+    `${kind} from the ${station.name} monitor (${station.distance_km} km): ${comfort.reasons[0]}. ` +
+    `Pulse: ${brief.local_pulse.drivers[0]}. ${comfort.disclaimer}`;
+}
+
+function sendFeedback(entityId, entityType, eventType) {
+  // Privacy-safe aggregate signal for the future engagement model: no user, IP, or location.
+  const body = JSON.stringify({ entity_id: entityId, entity_type: entityType, event_type: eventType, occurred_at: new Date().toISOString() });
+  fetch(API.feedback, { method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true }).catch(() => {});
+}
+
 function categoryLabel(category) {
   return { trailhead: "Outdoors", park: "Outdoors", library: "Community", food: "Food", art: "Local lore", venue: "Venue", community: "Community" }[category] || category;
 }
@@ -38,7 +60,10 @@ function renderPlaces(filter = "all") {
       <h3>${escapeHtml(place.name)}</h3>
       <p>${escapeHtml(place.description)}</p>
     </article>`).join("");
-  grid.querySelectorAll(".place-card").forEach(card => card.addEventListener("click", () => focusPlace(card.dataset.placeId)));
+  grid.querySelectorAll(".place-card").forEach(card => card.addEventListener("click", () => {
+    focusPlace(card.dataset.placeId);
+    sendFeedback(card.dataset.placeId, "place", "detail_opened");
+  }));
   renderMarkers(filter);
 }
 
@@ -95,7 +120,20 @@ async function initializeMap() {
   map.on("load", () => renderMarkers());
 }
 
+function loadBrief() {
+  fetch(API.brief)
+    .then(response => (response.ok ? response.json() : Promise.reject(new Error(`brief ${response.status}`))))
+    .then(renderBrief)
+    .catch(error => {
+      console.error(error);
+      document.querySelector("#comfort-label").textContent = "Unavailable";
+      document.querySelector("#pulse-score").textContent = "--";
+      document.querySelector("#brief-detail").textContent = "Live air sources are unavailable right now. Check air.utah.gov.";
+    });
+}
+
 async function start() {
+  loadBrief();
   await initializeMap();
   const [dashboardResponse, inversionResponse] = await Promise.all([
     fetch(API.dashboard).then(response => response.json()),

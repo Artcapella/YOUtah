@@ -4,12 +4,15 @@ Each provider adapter is responsible for four things: fetch, validate, normalize
 
 | Adapter | Endpoint / input | Normalized output | Required secret |
 | --- | --- | --- | --- |
-| `nws.py` | NWS `/points` → hourly forecast | `WeatherSnapshot` | None |
-| `utah_daq.py` | Utah DAQ air API + ceilometer | `AirSnapshot`, `observations` | None or provider key if required |
+| `nws.py` | NWS `/points` → hourly forecast | `WeatherSnapshot`, `HourlyConditions` | None |
+| `utah_daq.py` | `air.utah.gov/csvFeed.php?id=<station>` (tab-separated, newest first, `-9999` = missing, times UTC-7, wind mph) | `AirSnapshot`, `AirStationReading` → `ml_feature_snapshots` | None |
 | `udot.py` | UDOT Traffic API | `Advisory`, road observations | `UDOT_API_KEY` |
 | `uta.py` | GTFS static / GTFS-RT | `Advisory`, route/vehicle observations | None for documented feeds |
 | `ugrc.py` | Trailhead, trails, library, open-source place services | `Place` | None / API key for geocoding |
-| `events.py` | Ticketmaster, Eventbrite, Campus Connect ICS, library feeds | `LocalEvent` | provider keys as needed |
+| `events.py` | Ticketmaster Discovery (live), Eventbrite, Campus Connect ICS, library feeds | `LocalEvent` | `TICKETMASTER_API_KEY` |
+| `scripts/backfill_aqs_history.py` | EPA AQS pre-generated hourly files (88101, TEMP, RH_DP), quality-assured. Utah DAQ sends no hourly wind to AQS for these stations | Training CSV | None |
+
+Station metadata (`STATIONS` in `utah_daq.py`) maps each DAQ feed id to its EPA AQS site, so live readings and AQS history describe the same monitor. Coordinates come from the EPA AirNow site file and elevations from the USGS Elevation Point Query Service. The `ed` (Erda) and `hc` (Hurricane) feeds returned 404 in November 2026. Ingest reports them under `stations_failed` and the brief skips them.
 
 ## Ingestion procedure
 
