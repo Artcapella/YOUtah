@@ -8,8 +8,8 @@
   ],
   "crons": [
     { "path": "/api/cron/ingest", "schedule": "17 10 * * *" },
-    { "path": "/api/cron/ingest-live", "schedule": "*/15 * * * *" },
-    { "path": "/api/cron/refresh-guide", "schedule": "7 * * * *" },
+    { "path": "/api/cron/ingest-live", "schedule": "32 10 * * *" },
+    { "path": "/api/cron/refresh-guide", "schedule": "52 10 * * *" },
     { "path": "/api/cron/ingest-places", "schedule": "43 10 * * 1" }
   ]
 }

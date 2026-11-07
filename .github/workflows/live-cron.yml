@@ -1,0 +1,46 @@
+name: Live crons
+
+# Vercel Hobby only allows daily crons (see vercel.json). GitHub Actions supplies the
+# sub-daily cadence by calling the same Bearer-protected endpoints.
+# Repo secrets required: APP_URL (e.g. https://your-app.vercel.app) and CRON_SECRET.
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: live-cron
+  cancel-in-progress: false
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      APP_URL: ${{ secrets.APP_URL }}
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
+    steps:
+      - name: Skip when secrets are not configured
+        id: check
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "APP_URL or CRON_SECRET not set; skipping."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Live ingest (every 15 minutes)
+        if: steps.check.outputs.run == 'true'
+        run: |
+          curl -fsS --max-time 240 -H "Authorization: Bearer $CRON_SECRET" "${APP_URL%/}/api/cron/ingest-live"
+
+      - name: Refresh guide index (hourly)
+        if: steps.check.outputs.run == 'true'
+        run: |
+          MIN=$(date -u +%M)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$MIN" -lt 15 ]; then
+            curl -fsS --max-time 240 -H "Authorization: Bearer $CRON_SECRET" "${APP_URL%/}/api/cron/refresh-guide"
+          else
+            echo "Not the top-of-hour run; skipping guide refresh."
+          fi
