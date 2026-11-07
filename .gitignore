@@ -18,3 +18,5 @@ supabase/.branches
 *.log
 .DS_Store
 coverage
+
+.venv312/
