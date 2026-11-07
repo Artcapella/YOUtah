@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -20,17 +20,62 @@ class SourceHealth(BaseModel):
     href: str | None = None
 
 
+PlaceCategory = Literal["trailhead", "park", "library", "food", "art", "venue", "community"]
+
+
 class Place(BaseModel):
     id: str
     source: str
     source_url: str | None = None
     name: str
-    category: Literal["trailhead", "park", "library", "food", "art", "venue", "community"]
+    category: PlaceCategory
     description: str
     coordinate: Coordinate
     elevation_m: float | None = None
     tags: list[str] = Field(default_factory=list)
     updated_at: datetime
+
+
+class PlaceRecord(BaseModel):
+    """A place as a provider hands it to ingestion: normalized fields plus provenance.
+
+    Ingestion upserts these into ``places`` keyed by ``(source_id, external_id)``.
+    """
+
+    external_id: str
+    name: str
+    category: PlaceCategory
+    description: str = ""
+    coordinate: Coordinate
+    address: str | None = None
+    website_url: str | None = None
+    source_url: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    raw_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class GoogleReview(BaseModel):
+    """One review from Google Places Details. Display it with its author attribution."""
+
+    author_name: str | None = None
+    author_uri: str | None = None
+    rating: float | None = None
+    text: str | None = None
+    relative_time: str | None = None
+    published_at: datetime | None = None
+
+
+class GooglePlace(BaseModel):
+    """A live Google Places (New) result. Never persisted beyond ``place_id`` (Google Maps Platform terms)."""
+
+    place_id: str
+    name: str
+    address: str | None = None
+    coordinate: Coordinate | None = None
+    rating: float | None = None
+    user_rating_count: int | None = None
+    google_maps_uri: str | None = None
+    reviews: list[GoogleReview] = Field(default_factory=list)
 
 
 class LocalEvent(BaseModel):
@@ -132,4 +177,4 @@ class InversionResponse(BaseModel):
 
 
 class IngestRequest(BaseModel):
-    source: Literal["nws", "utah-daq", "udot", "uta", "ugrc", "events"]
+    source: Literal["nws", "utah-daq", "udot", "uta", "ugrc", "ridb", "osm", "events"]

@@ -15,7 +15,7 @@ from typing import Any, Literal, TypeVar
 from postgrest.exceptions import APIError
 from pydantic import BaseModel, ValidationError
 
-from backend.models import Advisory, LocalEvent, Place
+from backend.models import Advisory, Coordinate, LocalEvent, Place
 from backend.supabase_client import get_public_client
 
 logger = logging.getLogger(__name__)
@@ -26,22 +26,30 @@ ModelT = TypeVar("ModelT", bound=BaseModel)
 # Attribution for rows written without a `sources` entry (hand-curated content).
 CURATED_SOURCE = "Curated"
 
+# Dashboard places lane: the nearest few of each category around the requested point.
+PLACES_RADIUS_KM = 40.0
+PLACES_PER_CATEGORY = 8
+
 
 def _now() -> str:
     # Second precision with a Z suffix stays unambiguous inside PostgREST `or=(...)` filters.
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-async def _select(table: str, build: Callable[[Any], Any]) -> list[dict[str, Any]]:
+async def _read(label: str, build: Callable[[Any], Any]) -> list[dict[str, Any]]:
     try:
         client = get_public_client()
         if client is None:
             return []
-        response = await asyncio.to_thread(lambda: build(client.table(table)).execute())
+        response = await asyncio.to_thread(lambda: build(client).execute())
     except Exception as error:  # network, auth, or missing table must never break the dashboard
-        logger.warning("Supabase read from %s failed, using provider fallback: %s", table, error)
+        logger.warning("Supabase read from %s failed, using provider fallback: %s", label, error)
         return []
     return response.data or []
+
+
+async def _select(table: str, build: Callable[[Any], Any]) -> list[dict[str, Any]]:
+    return await _read(table, lambda client: build(client.table(table)))
 
 
 def _parse(model: type[ModelT], table: str, rows: Iterable[dict[str, Any]]) -> list[ModelT]:
@@ -66,17 +74,19 @@ def _price_label(is_free: bool, price_low: float | None) -> str:
     return f"From ${price_low:,.2f}".removesuffix(".00")
 
 
-async def load_places(limit: int = 500) -> list[Place]:
-    rows = await _select(
-        "places",
-        lambda q: q.select(
-            "id, name, category, description, source_url, website_url, tags, "
-            "latitude, longitude, elevation_m, updated_at, source:sources(name)"
-        )
-        .not_.is_("latitude", "null")
-        .not_.is_("longitude", "null")
-        .order("name")
-        .limit(limit),
+async def load_places(
+    point: Coordinate, radius_km: float = PLACES_RADIUS_KM, per_category: int = PLACES_PER_CATEGORY
+) -> list[Place]:
+    """The nearest places to ``point``, at most ``per_category`` per category, nearest first.
+
+    Uses the ``nearby_places`` SQL function (migration 20261107040000_place_sources).
+    """
+    rows = await _read(
+        "nearby_places",
+        lambda client: client.rpc(
+            "nearby_places",
+            {"lat": point.lat, "lng": point.lng, "radius_m": radius_km * 1000, "per_category": per_category},
+        ),
     )
     return _parse(
         Place,
@@ -84,7 +94,7 @@ async def load_places(limit: int = 500) -> list[Place]:
         (
             {
                 "id": row["id"],
-                "source": _source_name(row),
+                "source": row.get("source_name") or CURATED_SOURCE,
                 "source_url": row.get("source_url") or row.get("website_url"),
                 "name": row["name"],
                 "category": row["category"],

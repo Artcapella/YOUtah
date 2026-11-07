@@ -1,9 +1,10 @@
 import asyncio
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from typing import TypeVar
 
 from backend import repository
-from backend.models import Coordinate, DashboardResponse, InversionRecommendation, InversionResponse
+from backend.models import Coordinate, DashboardResponse, InversionRecommendation, InversionResponse, Place, SourceHealth
 from backend.providers.events import fetch_events
 from backend.providers.nws import fetch_weather
 from backend.providers.udot import fetch_advisories
@@ -13,6 +14,25 @@ from backend.providers.utah_daq import fetch_air_quality
 from backend.seed_data import demo_sources, demo_weather, utcnow
 
 T = TypeVar("T")
+
+# Ingested places sources without a fixed drawer entry, keyed by `sources.name`
+# (supabase/migrations/20261107040000_place_sources.sql). OSM's ODbL requires this attribution.
+PLACE_SOURCE_LINKS = {
+    "Recreation.gov": ("ridb", "https://www.recreation.gov"),
+    "OpenStreetMap contributors": ("osm", "https://www.openstreetmap.org/copyright"),
+}
+
+
+def place_source_health(places: list[Place]) -> list[SourceHealth]:
+    """One drawer entry per extra places source actually being served, with its newest row time."""
+    latest: dict[str, datetime] = {}
+    for place in places:
+        if place.source in PLACE_SOURCE_LINKS:
+            latest[place.source] = max(place.updated_at, latest.get(place.source, place.updated_at))
+    return [
+        SourceHealth(id=PLACE_SOURCE_LINKS[name][0], label=name, status="cached", updated_at=updated, href=PLACE_SOURCE_LINKS[name][1])
+        for name, updated in latest.items()
+    ]
 
 
 async def _stored_or_provider(stored: list[T], provider: Callable[[], Awaitable[list[T]]]) -> tuple[list[T], bool]:
@@ -32,7 +52,7 @@ async def build_dashboard(point: Coordinate) -> DashboardResponse:
 
     air, stored_places, stored_events, stored_advisories = await asyncio.gather(
         fetch_air_quality(point),
-        repository.load_places(),
+        repository.load_places(point),
         repository.load_upcoming_events(),
         repository.load_active_advisories(),
     )
@@ -58,6 +78,8 @@ async def build_dashboard(point: Coordinate) -> DashboardResponse:
         source.model_copy(update={"status": air.source, "updated_at": air.updated_at}) if source.id == "daq" else source
         for source in sources
     ]
+    if places_stored:
+        sources.extend(place_source_health(places))
 
     return DashboardResponse(
         generated_at=utcnow(),

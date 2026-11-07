@@ -5,6 +5,7 @@ A Vercel-ready **FastAPI/Python** application with a Supabase-backed discovery d
 ## What is included
 
 - Responsive dashboard shell with an interactive MapLibre map, filters, featured events, Utah stories, and source-status UI.
+- A full-screen map hub at **`/map`** (`public/map.html`, demo data for now) with MapTiler 3D terrain and contours, layers, trip planning, and an inversion view. On Vercel the CDN serves it through the `/map` rewrite in `vercel.json`; locally `app.py` serves it. Its MapTiler key is a browser key: restrict its allowed origins in the MapTiler dashboard.
 - Python FastAPI API, Pydantic domain models, and a working NWS server-side adapter with mock-safe fallbacks.
 - A deterministic **Escape the Inversion** recommendation route that is ready to receive Utah DAQ, UDOT, UTA, elevation, and trailhead data.
 - Supabase/Postgres schema, Row Level Security, PostGIS geometry columns, provenance, ingestion-run logging, and seed data.
@@ -65,9 +66,15 @@ Commit the migration with the feature branch. This keeps the shared database rep
 | `backend/providers/udot.py` | Roads, canyon access, traffic | Typed adapter shell + demo values |
 | `backend/providers/uta.py` | GTFS-RT transit / ski bus | Typed adapter shell + demo values |
 | `backend/providers/events.py` | Ticketmaster, Eventbrite, campus/library events | Ticketmaster live when `TICKETMASTER_API_KEY` is set; demo values otherwise |
-| `backend/providers/ugrc.py` | Trails, places, cultural layers | Typed adapter shell + demo values |
+| `backend/providers/ugrc.py` | Trails, places, cultural layers | Live: ~560 statewide trailheads (ArcGIS, no key) for the `ugrc` ingest. Dashboard fallback is still demo |
+| `backend/providers/ridb.py` | Campgrounds and recreation facilities | Live with `RIDB_API_KEY` for the `ridb` ingest |
+| `backend/providers/osm.py` | Parks, viewpoints, museums, art, libraries (OpenStreetMap via Overpass) | Live for the `osm` ingest. Needs a descriptive `NWS_USER_AGENT` |
+| `backend/providers/google_places.py` | Google Places search, ratings, reviews | Adapter only (`GOOGLE_MAPS_API_KEY`). Billed per call and not cacheable, so no route uses it yet |
+| `backend/providers/arcgis.py`, `http.py` | Shared: any ArcGIS feature layer (UGRC, UDOT); retrying JSON client for ingestion | Used by the adapters above |
 
 All providers return normalized Pydantic domain models from `backend/models.py`; the frontend never consumes provider-specific JSON.
+
+**Places ingestion.** `ugrc`, `ridb` and `osm` each fetch statewide and upsert into `places` by `(source_id, external_id)`. Run one with `POST /api/admin/ingest {"source": "osm"}`, or all of them through the weekly cron (`GET /api/cron/ingest-places`, in `vercel.json`). The dashboard reads the nearest few places per category around its point through the `nearby_places` SQL function. Apply `supabase/migrations/*_place_sources.sql` first.
 
 ## Utah intelligence
 

@@ -1,0 +1,1774 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0f2628" />
+<title>YOUtah — Map</title>
+<!--
+  YOUtah map hub — one page, every feature reachable from the map.
+  Served at /map: Vercel rewrites /map to this static file (vercel.json); app.py serves it locally.
+  ---------------------------------------------------------------------------
+  Keyless sources (no API keys needed for the demo):
+    • Basemap vectors + fonts: OpenFreeMap (tiles.openfreemap.org, OSM data)
+    • Elevation (hillshade, 3D terrain, smog lid, click-elevation): AWS Terrain Tiles (terrarium)
+    • MapTiler terrain + contours use the browser key in CONFIG.maptilerKey (override with
+      window.YOUTAH_MAPTILER_KEY). If MapTiler rejects the key, the map falls back to the keyless terrain.
+  All feature data below (DATA) is DEMO data and is labelled as such in the UI.
+  Hook-up: replace a layer's data at runtime with
+      YOUtah.registerData('events', arrayOfItems)   // same item shape as DATA.events
+  or point fetchers at the FastAPI routes (see CONFIG.api).
+  Public API for the chatbot / RAG later: window.YOUtah (bottom of file).
+-->
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" />
+<style>
+/* ---------- Design tokens: swap these for the designer's palette ---------- */
+:root{
+  --spruce:#163a3a; --deep:#0f2628; --deeper:#0a1c1e;
+  --glacier:#6fa8bf; --lake:#3f7f99; --moss:#7f9f6a; --sage:#a9b98f;
+  --clay:#b0714b; --sandstone:#d2ad7b; --bark:#6b4f3a; --slate:#4b6470; --smog:#9a8566;
+  --paper:#f3f1ea; --ink:#e7efe9; --ink-dim:#a9bdb6; --line:rgba(231,239,233,.12);
+  --gold:#d9a441; --danger:#d9694a; --ok:#7fb77e; --warn:#e2b84b;
+  --panel-w:380px; --detail-w:400px; --r:14px; --r-sm:9px;
+  --shadow:0 10px 30px rgba(5,18,20,.35);
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--deeper);font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+#map{position:fixed;inset:0}
+.maplibregl-ctrl-attrib{font-size:10px}
+.maplibregl-ctrl-top-right{top:224px}
+@media (max-width:899px){.maplibregl-ctrl-top-right{top:calc(272px + env(safe-area-inset-top))}.maplibregl-ctrl-bottom-right{display:none}}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+/* ---------- glass surfaces ---------- */
+.glass{background:rgba(15,38,40,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid var(--line);box-shadow:var(--shadow)}
+.chip{border:1px solid var(--line);background:rgba(255,255,255,.04);border-radius:999px;padding:6px 11px;font-size:13px;white-space:nowrap;display:inline-flex;gap:6px;align-items:center}
+.chip:hover{background:rgba(255,255,255,.09)}
+.chip.on{background:var(--glacier);color:var(--deeper);border-color:transparent;font-weight:600}
+.tag{display:inline-block;font-size:11px;padding:2px 7px;border-radius:999px;background:rgba(255,255,255,.08);color:var(--ink-dim);margin:2px 4px 0 0}
+.tag.good{background:rgba(127,183,126,.18);color:#bfe3bd}.tag.warn{background:rgba(226,184,75,.18);color:#f0d68e}.tag.bad{background:rgba(217,105,74,.2);color:#f3b19d}
+.tag.gold{background:rgba(217,164,65,.22);color:#f2cf86}.tag.demo{background:rgba(111,168,191,.18);color:#bfe0ec}
+.btn{border:0;border-radius:10px;padding:9px 13px;background:rgba(255,255,255,.08);font-weight:600;font-size:14px}
+.btn:hover{background:rgba(255,255,255,.14)}
+.btn.primary{background:var(--glacier);color:var(--deeper)}
+.btn.small{padding:6px 10px;font-size:12px}
+.muted{color:var(--ink-dim)}
+.fine{font-size:11px;color:var(--ink-dim);line-height:1.4}
+h2,h3,h4{margin:0}
+
+/* ---------- top bar ---------- */
+#topbar{position:fixed;z-index:30;left:12px;top:12px;right:12px;display:flex;gap:10px;align-items:flex-start;pointer-events:none}
+#topbar > *{pointer-events:auto}
+#searchwrap{position:relative;z-index:2;width:calc(var(--panel-w) - 24px);flex:none}
+a.btn{color:var(--ink);text-decoration:none}
+#searchbox{display:flex;align-items:center;gap:8px;border-radius:999px;padding:6px 8px 6px 6px}
+#brand{width:34px;height:34px;border-radius:50%;border:0;background:linear-gradient(140deg,var(--moss),var(--lake));font-weight:800;color:var(--deeper);flex:none;display:grid;place-items:center;text-decoration:none;font-size:15px}
+#search{flex:1;min-width:0;background:transparent;border:0;outline:0;font-size:15px;padding:6px 2px}
+#search::placeholder{color:var(--ink-dim)}
+#results{position:absolute;left:0;right:0;top:52px;border-radius:var(--r);overflow:hidden;display:none;max-height:60vh;overflow-y:auto}
+#results.open{display:block}
+#results button{display:flex;gap:10px;width:100%;text-align:left;border:0;background:transparent;padding:10px 14px;border-bottom:1px solid var(--line)}
+#results button:hover,#results button:focus{background:rgba(255,255,255,.07);outline:0}
+#cities{position:relative;z-index:1;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:6px;border-radius:999px;max-width:100%}
+#cities::-webkit-scrollbar{display:none}
+#topright{margin-left:auto;display:flex;gap:8px;align-items:center}
+#pulse{border-radius:999px;padding:7px 12px;font-size:13px;display:flex;gap:10px;align-items:center;white-space:nowrap}
+#lang{border-radius:999px;padding:8px 10px;border:1px solid var(--line);background:rgba(15,38,40,.92)}
+#lang option{background:var(--deep)}
+
+/* ---------- floating action buttons ---------- */
+#fabs{position:fixed;z-index:25;right:12px;top:70px;display:flex;flex-direction:column;gap:8px}
+.fab{width:44px;height:44px;border-radius:12px;border:1px solid var(--line);background:rgba(15,38,40,.92);font-weight:700;font-size:14px;display:grid;place-items:center;box-shadow:var(--shadow)}
+.fab.on{background:var(--glacier);color:var(--deeper)}
+
+/* ---------- panel (left sidebar desktop / bottom sheet mobile) ---------- */
+.sheet{position:fixed;z-index:20;display:flex;flex-direction:column;border-radius:var(--r);overflow:hidden}
+#panel{left:12px;top:70px;bottom:12px;width:calc(var(--panel-w) - 24px)}
+#detail{right:12px;top:70px;bottom:12px;width:var(--detail-w);transform:translateX(calc(100% + 24px));transition:transform .25s ease;z-index:22}
+#detail.open{transform:none}
+.sheet-head{flex:none;padding:10px 12px 0;touch-action:none}
+.handle{display:none;width:44px;height:5px;border-radius:9px;background:rgba(255,255,255,.28);margin:2px auto 10px;border:0;padding:0}
+.sheet-body{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:10px 14px 18px;-webkit-overflow-scrolling:touch}
+#timebar{display:flex;flex-direction:column;gap:6px;padding:4px 2px 10px;border-bottom:1px solid var(--line)}
+#timebar .row{display:flex;gap:6px;align-items:center;overflow-x:auto;scrollbar-width:none}
+#timebar input[type=range]{width:100%;accent-color:var(--glacier)}
+#timeLabel{font-size:12px;color:var(--ink-dim);display:flex;justify-content:space-between}
+#tabs{display:flex;gap:4px;padding:8px 0 0}
+#tabs button{flex:1;border:0;background:transparent;padding:9px 4px;border-bottom:2px solid transparent;color:var(--ink-dim);font-weight:600}
+#tabs button.on{color:var(--ink);border-color:var(--glacier)}
+.tab{display:none}.tab.on{display:block}
+.section-title{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-dim);margin:16px 0 8px}
+.row-wrap{display:flex;flex-wrap:wrap;gap:6px}
+.toggle-row{display:flex;align-items:center;gap:10px;justify-content:space-between;padding:8px 0}
+.switch{position:relative;width:38px;height:22px;flex:none}
+.switch input{opacity:0;width:0;height:0}
+.switch span{position:absolute;inset:0;border-radius:99px;background:rgba(255,255,255,.18);transition:.2s}
+.switch span:before{content:"";position:absolute;width:16px;height:16px;left:3px;top:3px;border-radius:50%;background:#fff;transition:.2s}
+.switch input:checked + span{background:var(--moss)}
+.switch input:checked + span:before{transform:translateX(16px)}
+
+/* feed cards */
+.card{border:1px solid var(--line);border-radius:var(--r);padding:12px;margin:0 0 10px;background:rgba(255,255,255,.03);text-align:left;width:100%;display:block}
+button.card:hover{background:rgba(255,255,255,.07)}
+.card .top{display:flex;gap:10px;align-items:flex-start}
+.emoji{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;font-size:19px;flex:none}
+.card h4{font-size:15px;line-height:1.25}
+.card .meta{font-size:12px;color:var(--ink-dim);margin-top:3px}
+.card.sponsored{border-color:rgba(217,164,65,.55)}
+.card.dim{opacity:.45}
+.score{margin-left:auto;font-size:11px;color:var(--ink-dim);text-align:right;flex:none}
+
+/* layer list */
+details.cat{border-top:1px solid var(--line);padding:4px 0}
+details.cat summary{list-style:none;display:flex;align-items:center;gap:8px;padding:10px 0;font-weight:700;cursor:pointer}
+details.cat summary::-webkit-details-marker{display:none}
+details.cat summary .count{margin-left:auto;font-size:12px;color:var(--ink-dim);font-weight:500}
+.layer{display:flex;align-items:center;gap:10px;padding:7px 0 7px 4px}
+.layer .sw{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:14px;flex:none}
+.layer .nm{flex:1;min-width:0;font-size:14px}
+.layer .nm small{display:block;color:var(--ink-dim);font-size:11px}
+.layer.persona-hit .nm{color:#d9efe0}
+.layer.persona-hit .sw{outline:2px solid var(--glacier);outline-offset:1px}
+select.ctl{width:100%;padding:9px 10px;border-radius:10px;background:rgba(255,255,255,.06);border:1px solid var(--line)}
+select.ctl option{background:var(--deep)}
+.legend{display:flex;height:10px;border-radius:6px;overflow:hidden;margin-top:8px}
+.legend-l{display:flex;justify-content:space-between;font-size:11px;color:var(--ink-dim);margin-top:3px}
+
+/* detail */
+#detailBody .hero{display:flex;gap:12px;align-items:flex-start;margin-bottom:8px}
+#detailBody .hero .emoji{width:48px;height:48px;font-size:26px;border-radius:14px}
+#detailBody h2{font-size:20px;line-height:1.2}
+.facts{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:13px;margin:10px 0}
+.facts dt{color:var(--ink-dim)}.facts dd{margin:0}
+.box{border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 12px;margin:10px 0;background:rgba(255,255,255,.03)}
+.box h4{font-size:13px;margin-bottom:6px;display:flex;gap:6px;align-items:center}
+.go-row{display:flex;gap:10px;font-size:13px;padding:5px 0;border-top:1px solid var(--line)}
+.go-row:first-of-type{border-top:0}
+.go-row b{min-width:22px}
+.actions{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}
+.ml-chip{display:flex;align-items:center;gap:10px}
+.ml-chip .pct{font-size:22px;font-weight:800}
+.spark{display:flex;align-items:flex-end;gap:2px;height:34px;margin-top:6px}
+.spark i{flex:1;background:var(--slate);border-radius:2px 2px 0 0;min-height:2px}
+.spark i.now{background:var(--glacier)}
+.close{position:absolute;right:10px;top:10px;width:34px;height:34px;border-radius:50%;border:0;background:rgba(255,255,255,.08);z-index:2}
+
+/* inversion card */
+#inv{position:fixed;z-index:19;right:12px;bottom:40px;width:340px;border-radius:var(--r);transition:right .25s ease}
+body.detail-open #inv{right:calc(var(--detail-w) + 24px)}
+#invPill{width:100%;display:flex;align-items:center;gap:8px;border:0;background:transparent;padding:11px 14px;font-weight:700;text-align:left}
+#invPill .caret{margin-left:auto;transition:transform .2s}
+#inv.collapsed #invPill .caret{transform:rotate(180deg)}
+#invBody{padding:0 14px 12px;max-height:48vh;overflow:auto}
+#inv.collapsed #invBody{display:none}
+.escape{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line);width:100%;border-left:0;border-right:0;border-bottom:0;background:transparent;text-align:left}
+.escape .el{margin-left:auto;text-align:right;font-size:12px;color:var(--ink-dim)}
+.profile svg{width:100%;height:auto;display:block}
+
+/* status bar */
+#status{position:fixed;z-index:18;left:var(--panel-w);bottom:12px;border-radius:999px;padding:6px 12px;font-size:12px;display:flex;gap:10px;align-items:center;max-width:calc(100vw - var(--panel-w) - 380px)}
+#status:empty{display:none}
+
+/* map popups */
+.maplibregl-popup-content{background:var(--deep);color:var(--ink);border-radius:10px;padding:8px 11px;box-shadow:var(--shadow);font-size:13px}
+.maplibregl-popup-tip{border-top-color:var(--deep)!important;border-bottom-color:var(--deep)!important}
+.pick-banner{position:fixed;z-index:40;left:50%;top:70px;transform:translateX(-50%);border-radius:999px;padding:10px 16px;font-weight:600}
+
+/* modal + toast */
+#modal{position:fixed;inset:0;z-index:60;background:rgba(5,15,16,.55);display:grid;place-items:center;padding:16px}
+#modal[hidden]{display:none}
+#modal .m{width:min(440px,100%);border-radius:var(--r);padding:18px;max-height:90dvh;overflow:auto}
+#modal label{display:block;font-size:13px;margin:10px 0 4px;color:var(--ink-dim)}
+#modal input,#modal textarea,#modal select{width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,.06)}
+.tier{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0;width:100%;background:transparent;text-align:left}
+.tier.on{border-color:var(--gold);background:rgba(217,164,65,.1)}
+#toast{position:fixed;z-index:70;left:50%;bottom:24px;transform:translate(-50%,40px);opacity:0;transition:.25s;border-radius:999px;padding:10px 16px;font-size:14px;pointer-events:none;max-width:90vw}
+#toast.show{transform:translate(-50%,0);opacity:1}
+#maperr{position:fixed;inset:auto 0 50% 0;text-align:center;z-index:5;color:var(--ink-dim);display:none}
+
+/* ---------- mobile (essential) ---------- */
+@media (max-width: 899px){
+  #topbar{left:8px;right:8px;top:calc(8px + env(safe-area-inset-top));flex-direction:column;gap:6px}
+  #searchwrap{width:100%}
+  #cities{width:100%;border-radius:999px}
+  #topright{display:none}
+  #fabs{right:8px;top:calc(118px + env(safe-area-inset-top))}
+  .fab{width:42px;height:42px}
+  .sheet{left:0!important;right:0!important;width:auto!important;top:0!important;bottom:auto!important;height:94dvh;border-radius:18px 18px 0 0;transition:transform .25s ease;will-change:transform}
+  #detail{z-index:24;transform:translateY(100dvh)}
+  #detail.open{transform:translateY(50dvh)}
+  .handle{display:block}
+  .sheet-body{max-height:calc(var(--vis, 50dvh) - var(--head, 150px));padding-bottom:calc(18px + env(safe-area-inset-bottom))}
+  #inv{left:8px;right:auto;top:calc(118px + env(safe-area-inset-top));bottom:auto;width:min(340px, calc(100vw - 70px))}
+  body.detail-open #inv{right:auto}
+  #invBody{max-height:46dvh}
+  #status{left:8px;right:auto;bottom:auto;top:calc(168px + env(safe-area-inset-top));max-width:calc(100vw - 70px)}
+  #status.hidden-m{display:none}
+  .pick-banner{top:auto;bottom:180px}
+  #toast{bottom:170px}
+  .chip{padding:7px 12px}
+}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div id="map" role="application" aria-label="Topographic map of Utah"></div>
+<div id="maperr">Map tiles could not load — the panels still work with demo data.</div>
+
+<header id="topbar">
+  <div id="searchwrap">
+    <div id="searchbox" class="glass">
+      <a id="brand" href="/" title="YOUtah home" aria-label="YOUtah home">YU</a>
+      <input id="search" type="search" autocomplete="off" data-i18n-ph="search" placeholder="Search Utah: places, events, trails…" aria-label="Search" />
+    </div>
+    <div id="results" class="glass" role="listbox"></div>
+  </div>
+  <nav id="cities" class="glass" aria-label="Jump to city"></nav>
+  <div id="topright">
+    <div id="pulse" class="glass" aria-live="polite"></div>
+    <select id="lang" aria-label="Language">
+      <option value="en">English</option><option value="es">Español</option><option value="zh">中文</option>
+    </select>
+  </div>
+</header>
+
+<div id="fabs">
+  <button class="fab" id="fab3d" title="Toggle 2D / 3D terrain" aria-label="Toggle 3D terrain">3D</button>
+  <button class="fab" id="fabLocate" title="My location" aria-label="My location">◎</button>
+  <button class="fab" id="fabSuggest" title="Suggest a spot" aria-label="Suggest a spot" data-i18n-title="suggest">＋</button>
+</div>
+
+<aside id="panel" class="sheet glass" aria-label="Explore">
+  <div class="sheet-head">
+    <button class="handle" aria-label="Resize panel"></button>
+    <div id="timebar">
+      <div class="row" id="timeChips"></div>
+      <input id="timeRange" type="range" min="0" max="72" step="1" value="0" aria-label="Time" />
+      <div id="timeLabel"><span id="timeText">Now</span><span class="fine" id="timeHint">drag to see later</span></div>
+    </div>
+    <div id="tabs" role="tablist">
+      <button class="on" data-tab="today" data-i18n="today">Today</button>
+      <button data-tab="layers" data-i18n="layers">Layers</button>
+      <button data-tab="plan" data-i18n="plan">Plan</button>
+    </div>
+  </div>
+  <div class="sheet-body">
+    <section class="tab on" id="tab-today"></section>
+    <section class="tab" id="tab-layers"></section>
+    <section class="tab" id="tab-plan"></section>
+  </div>
+</aside>
+
+<aside id="detail" class="sheet glass" aria-label="Details">
+  <div class="sheet-head"><button class="handle" aria-label="Resize details"></button></div>
+  <button class="close" id="detailClose" aria-label="Close">✕</button>
+  <div class="sheet-body" id="detailBody"></div>
+</aside>
+
+<section id="inv" class="glass" aria-label="Escape the inversion">
+  <button id="invPill"><span>🌫</span><span id="invPillText">Escape the inversion</span><span class="caret">▾</span></button>
+  <div id="invBody"></div>
+</section>
+
+<div id="status" class="glass" aria-live="polite"></div>
+<div id="modal" hidden><div class="m glass" id="modalBox"></div></div>
+<div id="toast" class="glass" role="status"></div>
+
+<script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+<script>
+'use strict';
+/* =========================================================================
+   0. Utilities
+   ========================================================================= */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const mqMobile = matchMedia('(max-width: 899px)');
+const isMobile = () => mqMobile.matches;
+const canHover = matchMedia('(hover: hover)').matches;
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('youtah:' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('youtah:' + k, JSON.stringify(v)); } catch {} }
+};
+const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+function km(a, b) {
+  const R = 6371, toR = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * toR, dLng = (b.lng - a.lng) * toR;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * toR) * Math.cos(b.lat * toR) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+const mi = k => k * 0.621371;
+const ft = m => Math.round(m * 3.28084);
+const fmtDist = k => k < 1 ? `${Math.round(k * 1000)} m` : `${k < 10 ? k.toFixed(1) : Math.round(k)} km`;
+const money = v => v === 0 ? 'Free' : v == null ? '—' : `$${v % 1 ? v.toFixed(2) : v}`;
+function hash01(s) { let h = 2166136261; for (const c of String(s)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return ((h >>> 0) % 1000) / 1000; }
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 2600); }
+
+/* =========================================================================
+   1. Config, palette, i18n
+   ========================================================================= */
+const CONFIG = {
+  utahBounds: { minLat: 36.99, maxLat: 42.01, minLng: -114.06, maxLng: -109.04 },
+  defaultOrigin: { lat: 40.7608, lng: -111.8910, label: 'Salt Lake City' },
+  // Browser-side MapTiler key (restrict allowed origins in the MapTiler dashboard). Falls back to keyless sources on error.
+  maptilerKey: window.YOUTAH_MAPTILER_KEY || 'ZVzYn0DX2lp5DAYTDqOu',
+  // For Claude Code: live endpoints to swap in for demo data (see registerData)
+  api: { dashboard: '/api/dashboard', inversion: '/api/recommendations/escape-inversion' }
+};
+const PAL = { spruce:'#163a3a', glacier:'#6fa8bf', lake:'#3f7f99', moss:'#7f9f6a', sage:'#a9b98f', clay:'#b0714b',
+  sandstone:'#d2ad7b', bark:'#6b4f3a', slate:'#4b6470', smog:'#9a8566', gold:'#d9a441', plum:'#8a6d8f', rust:'#a2553c', teal:'#3e8d86' };
+
+const I18N = {
+  en: { search:'Search Utah: places, events, trails…', today:'Today', layers:'Layers', plan:'Plan', now:'Now', tonight:'Tonight',
+    tomorrow:'Tomorrow', weekend:'Weekend', happening:"What's most interesting", beyond:'Beyond the brochure', beyondHint:'Hide the usual ski / national-park / Temple Square picks',
+    fit:'Fit my budget', escape:'Escape the inversion', getThere:'Get there', addPlan:'Add to plan', directions:'Directions', share:'Share',
+    promote:'Promote', suggest:'Suggest a spot', crowd:'Predicted crowd', budget:'Budget', total:'Total', lensFor:'Show me Utah as a…',
+    visitor:'Visitor', student:'Student', newcomer:'New resident', outdoors:'Outdoors', remote:'Remote worker', cheap:'On a budget',
+    conditions:'Conditions', move:'Getting around', do:'Things to do', services:'Community & services', culture:'Culture & lore', context:'Context & predictions',
+    applyPreset:'Turn on these layers', contextMap:'Background map (one at a time)', sources:'Data sources', emptyPlan:'Add places and events from their detail cards to build a day.' },
+  es: { search:'Busca en Utah: lugares, eventos, senderos…', today:'Hoy', layers:'Capas', plan:'Plan', now:'Ahora', tonight:'Esta noche',
+    tomorrow:'Mañana', weekend:'Fin de semana', happening:'Lo más interesante', beyond:'Más allá del folleto', beyondHint:'Oculta lo típico: esquí, parques nacionales, Temple Square',
+    fit:'Dentro de mi presupuesto', escape:'Escapa de la inversión', getThere:'Cómo llegar', addPlan:'Añadir al plan', directions:'Ruta', share:'Compartir',
+    promote:'Promocionar', suggest:'Sugerir un lugar', crowd:'Afluencia prevista', budget:'Presupuesto', total:'Total', lensFor:'Muéstrame Utah como…',
+    visitor:'Visitante', student:'Estudiante', newcomer:'Nuevo residente', outdoors:'Aire libre', remote:'Trabajo remoto', cheap:'Con poco dinero',
+    conditions:'Condiciones', move:'Movilidad', do:'Qué hacer', services:'Comunidad y servicios', culture:'Cultura y leyendas', context:'Contexto y predicciones',
+    applyPreset:'Activar estas capas', contextMap:'Mapa de fondo (uno a la vez)', sources:'Fuentes de datos', emptyPlan:'Añade lugares y eventos desde sus tarjetas para armar tu día.' },
+  zh: { search:'搜索犹他：地点、活动、步道…', today:'今天', layers:'图层', plan:'行程', now:'现在', tonight:'今晚',
+    tomorrow:'明天', weekend:'周末', happening:'现在最有意思的', beyond:'超越宣传册', beyondHint:'隐藏常见的滑雪、国家公园、圣殿广场推荐',
+    fit:'符合预算', escape:'逃离逆温层', getThere:'如何前往', addPlan:'加入行程', directions:'导航', share:'分享',
+    promote:'推广', suggest:'推荐地点', crowd:'预测人流', budget:'预算', total:'合计', lensFor:'以…的身份看犹他',
+    visitor:'游客', student:'学生', newcomer:'新居民', outdoors:'户外', remote:'远程办公', cheap:'省钱',
+    conditions:'实时状况', move:'出行', do:'活动与去处', services:'社区与服务', culture:'文化与传说', context:'背景与预测',
+    applyPreset:'开启这些图层', contextMap:'背景地图（一次一个）', sources:'数据来源', emptyPlan:'从地点或活动卡片中添加，规划你的一天。' }
+};
+const t = k => (I18N[state.lang] && I18N[state.lang][k]) || I18N.en[k] || k;
+
+/* =========================================================================
+   2. Time helpers (everything is relative to page-load time so the demo always looks live)
+   ========================================================================= */
+const NOW = new Date();
+function dayAt(h, m = 0, d = 0) { const x = new Date(NOW); x.setDate(x.getDate() + d); x.setHours(h, m, 0, 0); return x; }
+const SAT = (6 - NOW.getDay() + 7) % 7;               // days until Saturday (0 if today)
+const SUN = SAT === 0 && NOW.getDay() === 0 ? 0 : SAT + 1;
+const ev = (sh, sm, d, durH) => { const s = dayAt(sh, sm, d); return { start: s, end: new Date(s.getTime() + durH * 3600e3) }; };
+function fmtTime(d) { return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
+function fmtDay(d) {
+  const a = new Date(NOW); a.setHours(0,0,0,0); const b = new Date(d); b.setHours(0,0,0,0);
+  const diff = Math.round((b - a) / 864e5);
+  return diff === 0 ? t('today') : diff === 1 ? t('tomorrow') : d.toLocaleDateString([], { weekday: 'long' });
+}
+
+/* =========================================================================
+   3. DEMO DATA  (shape = contract for real providers; see registerData)
+   Common item fields: id, name, lat, lng, d (blurb), f ([[label,value]]), price ($ or 0),
+   rating, reviews, buzz (mentions/wk), pop (0–1 popularity prior), brochure (classic-tourism flag),
+   personas [], tips [], src (key into SOURCES), sponsored
+   ========================================================================= */
+const P = (id, name, lat, lng, o = {}) => ({ id, name, lat, lng, ...o });
+
+const CITIES = [
+  ['Salt Lake City', 40.7608, -111.8910, 11.2], ['Ogden', 41.2230, -111.9738, 12], ['Provo', 40.2338, -111.6585, 12],
+  ['Park City', 40.6461, -111.4980, 12.3], ['Lehi · Silicon Slopes', 40.4180, -111.8750, 12], ['Logan', 41.7370, -111.8338, 12],
+  ['Moab', 38.5733, -109.5498, 11.5], ['St. George', 37.0965, -113.5684, 11.5], ['Cedar City', 37.6775, -113.0619, 12], ['All of Utah', 39.4, -111.6, 6.2]
+];
+
+const DATA = {
+  wx: [
+    P('kslc','SLC Airport (KSLC)',40.7884,-111.9778,{elev:1288,temp:-3,cond:'Haze, calm',src:'nws',pop:.2}),
+    P('wbb','U of U campus',40.7662,-111.8478,{elev:1460,temp:-1,cond:'Haze',src:'nws',pop:.2}),
+    P('mill','Mill Creek Canyon',40.6870,-111.6900,{elev:1950,temp:4,cond:'Clear',src:'nws',pop:.2}),
+    P('pc','Park City',40.6560,-111.5100,{elev:2100,temp:5,cond:'Sunny',src:'nws',pop:.2}),
+    P('alta','Alta–Collins',40.5765,-111.6383,{elev:2945,temp:2,cond:'Sunny',src:'nws',pop:.2}),
+    P('hp','Snowbird–Hidden Peak',40.5612,-111.6449,{elev:3353,temp:0,cond:'Clear, light wind',src:'nws',pop:.2}),
+    P('prov','Provo Airport',40.2192,-111.7234,{elev:1370,temp:-2,cond:'Haze',src:'nws',pop:.2}),
+    P('ogp','Ogden Peak',41.1990,-111.8790,{elev:2940,temp:1,cond:'Clear',src:'nws',pop:.2}),
+    P('logan','Logan',41.7880,-111.8520,{elev:1380,temp:-6,cond:'Fog, haze',src:'nws',pop:.2}),
+    P('stg','St. George',37.0365,-113.5100,{elev:860,temp:12,cond:'Sunny',src:'nws',pop:.2}),
+    P('moab','Moab',38.5733,-109.5498,{elev:1220,temp:9,cond:'Sunny',src:'nws',pop:.2})
+  ],
+  aq: [
+    P('hawthorne','Hawthorne (SLC)',40.7343,-111.8721,{aqi:128,pm:46,src:'daq'}), P('rosepark','Rose Park',40.7955,-111.9309,{aqi:136,pm:50,src:'daq'}),
+    P('magna','Magna',40.7085,-112.0947,{aqi:118,pm:42,src:'daq'}), P('bountiful','Bountiful',40.9030,-111.8845,{aqi:112,pm:40,src:'daq'}),
+    P('ogden','Ogden',41.2068,-111.9755,{aqi:104,pm:37,src:'daq'}), P('lindon','Lindon',40.3414,-111.7136,{aqi:121,pm:43,src:'daq'}),
+    P('spanishfork','Spanish Fork',40.1365,-111.6604,{aqi:98,pm:34,src:'daq'}), P('loganaq','Logan',41.7428,-111.8317,{aqi:141,pm:52,src:'daq'}),
+    P('herriman','Herriman',40.4964,-112.0364,{aqi:92,pm:31,src:'daq'}), P('erda','Erda',40.6007,-112.3557,{aqi:70,pm:21,src:'daq'}),
+    P('pcaq','Park City (sensor)',40.6600,-111.5050,{aqi:34,pm:8,src:'daq'}), P('altaaq','Alta (sensor)',40.5880,-111.6380,{aqi:18,pm:4,src:'daq'})
+  ],
+  ski: [
+    P('alta','Alta',40.5884,-111.6386,{snow24:5,base:38,lifts:4,liftsTotal:6,wait:6,canyon:'LCC',bus:'994',price:179,pop:.8,brochure:true,src:'skiutah',d:'Skiers-only legend. Locals call the Collins lift line a social event.'}),
+    P('snowbird','Snowbird',40.5810,-111.6570,{snow24:4,base:41,lifts:6,liftsTotal:11,wait:9,canyon:'LCC',bus:'994',price:189,pop:.85,brochure:true,src:'skiutah'}),
+    P('brighton','Brighton',40.5980,-111.5832,{snow24:6,base:30,lifts:3,liftsTotal:7,wait:4,canyon:'BCC',bus:'972',price:139,pop:.75,brochure:true,src:'skiutah',d:'Night skiing and the most local-feeling resort in the Cottonwoods.'}),
+    P('solitude','Solitude',40.6199,-111.5919,{snow24:5,base:27,lifts:2,liftsTotal:8,wait:3,canyon:'BCC',bus:'972',price:159,pop:.6,brochure:true,src:'skiutah'}),
+    P('pcm','Park City Mountain',40.6514,-111.5080,{snow24:2,base:22,lifts:5,liftsTotal:41,wait:12,canyon:'I-80',price:229,pop:.9,brochure:true,src:'skiutah'}),
+    P('deervalley','Deer Valley',40.6374,-111.4783,{snow24:2,base:24,lifts:4,liftsTotal:21,wait:7,canyon:'I-80',price:249,pop:.8,brochure:true,src:'skiutah'}),
+    P('snowbasin','Snowbasin',41.2160,-111.8569,{snow24:3,base:25,lifts:3,liftsTotal:12,wait:5,price:169,pop:.65,brochure:true,src:'skiutah'}),
+    P('powmow','Powder Mountain',41.3790,-111.7807,{snow24:4,base:26,lifts:2,liftsTotal:9,wait:2,price:119,pop:.5,brochure:true,src:'skiutah'}),
+    P('sundance','Sundance',40.3920,-111.5880,{snow24:3,base:18,lifts:2,liftsTotal:5,wait:2,price:109,pop:.45,brochure:true,src:'skiutah'}),
+    P('nordic','Nordic Valley',41.3103,-111.8645,{snow24:2,base:14,lifts:1,liftsTotal:4,wait:1,price:59,pop:.35,src:'skiutah',d:'Cheapest lift ticket on the Wasatch Front — great for first-timers.',personas:['cheap','student']}),
+    P('beaver','Beaver Mountain',41.9682,-111.5441,{snow24:4,base:20,lifts:2,liftsTotal:5,wait:1,price:70,pop:.35,src:'skiutah',d:'Family-owned since 1939. Logan locals\' mountain.'}),
+    P('brianhead','Brian Head',37.7021,-112.8499,{snow24:1,base:16,lifts:3,liftsTotal:8,wait:2,price:99,pop:.4,brochure:true,src:'skiutah'})
+  ],
+  events: [
+    P('firstfri','First Friday Art Stroll — 25th Street',41.2208,-111.9750,{...ev(18,0,0,3.5),price:0,pop:.7,cat:'Art',venue:'Historic 25th St, Ogden',src:'ticketmaster',personas:['visitor','newcomer','cheap'],d:'Galleries open late on Ogden\'s once-notorious Prohibition-era street.'}),
+    P('hockey','NHL hockey night',40.7683,-111.9011,{...ev(19,0,0,2.75),price:45,pop:.95,cat:'Sports',venue:'Delta Center',src:'ticketmaster',personas:['visitor']}),
+    P('improv','Late-night improv',40.7660,-111.9020,{...ev(21,30,0,1.5),price:15,pop:.55,cat:'Comedy',venue:'The Gateway',src:'ticketmaster',personas:['student','newcomer']}),
+    P('mixer','International student mixer',40.7650,-111.8460,{...ev(19,0,0,3),price:0,pop:.6,cat:'Community',venue:'A. Ray Olpin Union, U of U',src:'campus',personas:['student','newcomer','cheap'],d:'Free food, language tables (中文 · Español · 한국어), and club sign-ups.'}),
+    P('swing','Swing dance night',40.7235,-111.8580,{...ev(20,0,0,3),price:8,pop:.5,cat:'Dance',venue:'Sugar House',src:'ticketmaster',personas:['newcomer','student','cheap'],d:'Beginner lesson at 8, social dance after. No partner needed.'}),
+    P('velour','Indie show at Velour',40.2343,-111.6589,{...ev(20,0,0,3),price:12,pop:.6,cat:'Music',venue:'Velour Live Music Gallery, Provo',src:'ticketmaster',personas:['student'],d:'The Provo venue that launched a decade of Utah indie bands.'}),
+    P('market','Winter Farmers Market',40.7614,-111.9058,{...ev(10,0,SAT,4),price:0,pop:.85,cat:'Market',venue:'Rio Grande Depot',src:'ticketmaster',personas:['visitor','newcomer','cheap'],d:'Indoor winter market: local honey, tamales, Navajo blankets, live fiddle.'}),
+    P('esl','ESL conversation circle',40.7614,-111.8838,{...ev(11,0,SAT,1.5),price:0,pop:.4,cat:'Community',venue:'SLC Main Library',src:'library',personas:['newcomer','student','cheap']}),
+    P('aviary','Morning bird walk',40.7445,-111.8760,{...ev(9,0,SAT,1.5),price:5,pop:.35,cat:'Outdoors',venue:'Tracy Aviary, Liberty Park',src:'ticketmaster',personas:['newcomer','cheap']}),
+    P('utes','Utes basketball',40.7621,-111.8388,{...ev(19,0,SAT,2.25),price:10,pop:.8,cat:'Sports',venue:'Huntsman Center',src:'campus',personas:['student'],d:'$10 student tickets. Wear red.'}),
+    P('nhmu','Museum After Dark',40.7639,-111.8226,{...ev(18,0,SAT,3),price:18,pop:.6,cat:'Museum',venue:'Natural History Museum of Utah',src:'ticketmaster',personas:['visitor','student']}),
+    P('kingsbury','Contemporary dance company',40.7637,-111.8510,{...ev(19,30,SAT,2),price:25,pop:.5,cat:'Performance',venue:'Kingsbury Hall',src:'campus',personas:['student','visitor']}),
+    P('swaner','Snowshoe & stargaze',40.7255,-111.5450,{...ev(17,30,SAT,2),price:15,pop:.45,cat:'Outdoors',venue:'Swaner EcoCenter, Park City',src:'ticketmaster',personas:['outdoors','visitor'],d:'Above the smog: guided snowshoe on the preserve, then telescopes.'}),
+    P('egyptian','Live music at the Egyptian',40.6445,-111.4951,{...ev(20,0,SAT,2),price:30,pop:.55,cat:'Music',venue:'Egyptian Theatre, Park City',src:'ticketmaster',personas:['visitor']}),
+    P('stgmarket','Downtown Farmers Market',37.1083,-113.5833,{...ev(9,0,SAT,4),price:0,pop:.5,cat:'Market',venue:'St. George',src:'ticketmaster',personas:['visitor','cheap']}),
+    P('arches','Night-sky ranger talk',38.6166,-109.6196,{...ev(19,0,SAT,1.5),price:0,pop:.5,cat:'Outdoors',venue:'Arches NP visitor center',src:'nps',brochure:true,personas:['visitor','outdoors']}),
+    P('hotpot','Hot-pot newcomers meetup',40.6996,-111.8880,{...ev(12,0,SUN,2),price:20,pop:.45,cat:'Community',venue:'SLC Chinatown',src:'community',personas:['newcomer','student'],d:'Monthly meetup for new arrivals. Mandarin & English.'}),
+    P('runclub','Sunday run club',40.7455,-111.8740,{...ev(8,0,SUN,1.5),price:0,pop:.4,cat:'Outdoors',venue:'Liberty Park',src:'community',personas:['newcomer','cheap']})
+  ],
+  trailheads: [
+    P('ensign','Ensign Peak',40.7955,-111.8889,{elev:1520,basin:'SL',km:1.6,diff:'Easy',src:'ugrc',pop:.7}),
+    P('livingroom','Living Room',40.7600,-111.8260,{elev:1530,basin:'SL',km:3.5,diff:'Moderate',src:'ugrc',pop:.75,d:'Stone "furniture" with a valley view. Classic U student sunset hike.',personas:['student']}),
+    P('olympus','Mount Olympus',40.6510,-111.8040,{elev:1510,basin:'SL',km:10.5,diff:'Hard',src:'ugrc',pop:.5}),
+    P('ferguson','Ferguson Canyon',40.6195,-111.7900,{elev:1640,basin:'SL',km:4,diff:'Moderate',src:'ugrc',pop:.4}),
+    P('churchfork','Grandeur Peak (Church Fork)',40.7077,-111.7598,{elev:1700,basin:'SL',km:8,diff:'Hard',canyon:'MCC',src:'ugrc',pop:.5}),
+    P('bigwater','Big Water (Millcreek)',40.6835,-111.6510,{elev:2320,basin:'SL',km:8,diff:'Moderate',canyon:'MCC',src:'ugrc',pop:.55,d:'Dogs off-leash on odd days. Snowshoe-friendly in winter.'}),
+    P('blanche','Lake Blanche',40.6365,-111.7255,{elev:1890,basin:'SL',km:11,diff:'Hard',canyon:'BCC',bus:'972',src:'ugrc',pop:.7}),
+    P('donut','Donut Falls',40.6365,-111.6440,{elev:2240,basin:'SL',km:5,diff:'Easy',canyon:'BCC',bus:'972',src:'ugrc',pop:.75,personas:['visitor']}),
+    P('lakemary','Lake Mary (Brighton)',40.5980,-111.5845,{elev:2660,basin:'SL',km:3.5,diff:'Moderate',canyon:'BCC',bus:'972',src:'ugrc',pop:.6}),
+    P('whitepine','White Pine',40.5780,-111.6810,{elev:2030,basin:'SL',km:11,diff:'Hard',canyon:'LCC',bus:'994',src:'ugrc',pop:.5}),
+    P('cecret','Cecret Lake (Albion Basin)',40.5780,-111.6120,{elev:2860,basin:'SL',km:2.7,diff:'Easy',canyon:'LCC',bus:'994',src:'ugrc',pop:.6,d:'Summer road closes above Alta in winter — snowshoe in from the bus stop.'}),
+    P('waterfall','Waterfall Canyon',41.2006,-111.9310,{elev:1560,basin:'OG',km:4,diff:'Moderate',src:'ugrc',pop:.5}),
+    P('wheeler','Wheeler Creek (Ogden Valley)',41.2350,-111.8360,{elev:1580,basin:'OG',km:6,diff:'Easy',src:'ugrc',pop:.35}),
+    P('stewart','Stewart Falls',40.3930,-111.6010,{elev:2070,basin:'UV',km:5.5,diff:'Easy',canyon:'US-189',src:'ugrc',pop:.6}),
+    P('aspengrove','Timpanogos (Aspen Grove)',40.4045,-111.6050,{elev:2110,basin:'UV',km:21,diff:'Hard',canyon:'US-189',src:'ugrc',pop:.55}),
+    P('ytrail','Y Mountain Trail',40.2500,-111.6280,{elev:1500,basin:'UV',km:3.8,diff:'Moderate',src:'ugrc',pop:.65,personas:['student']}),
+    P('delicate','Delicate Arch',38.7356,-109.5207,{elev:1310,km:5,diff:'Moderate',src:'nps',brochure:true,pop:.95}),
+    P('angels','Angels Landing',37.2595,-112.9510,{elev:1310,km:8.7,diff:'Hard · permit',src:'nps',brochure:true,pop:.95})
+  ],
+  trails: [
+    P('bst','Bonneville Shoreline Trail (SLC)',40.77,-111.84,{coords:[[-111.875,40.792],[-111.858,40.785],[-111.835,40.775],[-111.825,40.765],[-111.812,40.745],[-111.800,40.720]],src:'ugrc',d:'Follows the ancient shoreline of Lake Bonneville along the foothills.'}),
+    P('blanchet','Lake Blanche trail',40.62,-111.72,{coords:[[-111.7255,40.6365],[-111.7230,40.6250],[-111.7150,40.6090]],src:'ugrc'}),
+    P('jrp','Jordan River Parkway',40.71,-111.92,{coords:[[-111.930,40.800],[-111.925,40.760],[-111.920,40.700],[-111.925,40.620],[-111.915,40.540]],src:'ugrc',d:'45 miles of paved path, flat and bike-friendly.',personas:['cheap','newcomer']}),
+    P('cecrett','Cecret Lake trail',40.574,-111.615,{coords:[[-111.6120,40.5780],[-111.6160,40.5740],[-111.6190,40.5710]],src:'ugrc'})
+  ],
+  parks: [
+    P('zion','Zion National Park',37.2982,-113.0263,{price:35,brochure:true,pop:.95,src:'nps',f:[['Fee','$35 / vehicle (7 days)'],['Alert','Angels Landing requires a permit']]}),
+    P('bryce','Bryce Canyon National Park',37.5930,-112.1871,{price:35,brochure:true,pop:.85,src:'nps'}),
+    P('archesnp','Arches National Park',38.7331,-109.5925,{price:30,brochure:true,pop:.9,src:'nps',f:[['Alert','Timed-entry reservations in season']]}),
+    P('canyonlands','Canyonlands National Park',38.3269,-109.8783,{price:30,brochure:true,pop:.7,src:'nps'}),
+    P('capreef','Capitol Reef National Park',38.0877,-111.1355,{price:20,brochure:true,pop:.6,src:'nps',d:'Pick fruit from pioneer orchards in season. Try the pie at Gifford House.'}),
+    P('antelope','Antelope Island State Park',41.0400,-112.2500,{price:15,pop:.6,src:'nps',d:'Free-roaming bison 40 minutes from downtown. Sunsets over the Great Salt Lake.'}),
+    P('goblin','Goblin Valley State Park',38.5733,-110.7071,{price:20,pop:.55,src:'nps'}),
+    P('deadhorse','Dead Horse Point State Park',38.4720,-109.7400,{price:20,pop:.6,src:'nps'}),
+    P('snowcanyon','Snow Canyon State Park',37.2028,-113.6403,{price:15,pop:.5,src:'nps'})
+  ],
+  spaces: [
+    P('liberty','Liberty Park',40.7455,-111.8740,{price:0,pop:.7,src:'ugrc',personas:['cheap','newcomer']}),
+    P('sugarhouse','Sugar House Park',40.7215,-111.8460,{price:0,pop:.65,src:'ugrc',d:'The sledding hill is a winter institution.'}),
+    P('memorygrove','Memory Grove',40.7765,-111.8870,{price:0,pop:.5,src:'ugrc'}),
+    P('redbutte','Red Butte Garden',40.7665,-111.8240,{price:16,pop:.6,src:'ugrc',personas:['visitor']}),
+    P('gallivan','Gallivan Center',40.7650,-111.8890,{price:0,pop:.55,src:'ugrc',d:'Downtown plaza; ice rink in winter.'}),
+    P('pioneer','Pioneer Park',40.7625,-111.9010,{price:0,pop:.45,src:'ugrc'}),
+    P('ogdenriver','Ogden River Parkway',41.2290,-111.9640,{price:0,pop:.4,src:'ugrc'}),
+    P('provoriver','Provo River Trail park',40.2850,-111.6900,{price:0,pop:.4,src:'ugrc'})
+  ],
+  food: [
+    P('iguana','Red Iguana',40.7716,-111.9133,{price:22,rating:4.6,reviews:9800,buzz:140,pop:.9,cuisine:'Mexican (mole)',src:'places',hours:'11a–9p',d:'Seven moles. The line is part of the experience.'}),
+    P('crown','Crown Burgers',40.7652,-111.8790,{price:13,rating:4.4,reviews:2100,buzz:40,pop:.6,cuisine:'Pastrami burger',src:'places',d:'Utah\'s Greek-immigrant pastrami burger, dunked in fry sauce.'}),
+    P('ruths','Ruth\'s Diner',40.7647,-111.7727,{price:20,rating:4.5,reviews:3400,buzz:55,pop:.6,cuisine:'Diner',src:'places',d:'Canyon diner in a trolley car since 1930. Get the mile-high biscuits.'}),
+    P('phohay','Pho Tay Ho',40.7313,-111.8910,{price:14,rating:4.6,reviews:1500,buzz:35,pop:.55,cuisine:'Vietnamese',src:'places',personas:['cheap','student']}),
+    P('chinatown','SLC Chinatown market',40.6996,-111.8880,{price:12,rating:4.4,reviews:2600,buzz:60,pop:.6,cuisine:'Chinese · Asian market',src:'places',personas:['newcomer','student']}),
+    P('feldmans','Feldman\'s Deli',40.7128,-111.8357,{price:18,rating:4.6,reviews:1200,buzz:22,pop:.45,cuisine:'Deli',src:'places'}),
+    P('bruges','Bruges Waffles & Frites',40.7613,-111.8916,{price:11,rating:4.5,reviews:1100,buzz:28,pop:.5,cuisine:'Belgian',src:'places'}),
+    P('brickoven','Brick Oven',40.2470,-111.6560,{price:16,rating:4.3,reviews:2900,buzz:30,pop:.55,cuisine:'Pizza',src:'places',personas:['student']}),
+    P('roosters','Roosters 25th Street',41.2209,-111.9719,{price:24,rating:4.4,reviews:1700,buzz:25,pop:.5,cuisine:'Brewpub',src:'places'}),
+    P('highwest','High West Saloon',40.6435,-111.4964,{price:35,rating:4.5,reviews:3100,buzz:45,pop:.6,cuisine:'Ski-in distillery',src:'places'}),
+    P('aggieic','Aggie Ice Cream',41.7414,-111.8130,{price:5,rating:4.8,reviews:2300,buzz:20,pop:.5,cuisine:'Ice cream',src:'places',personas:['student','cheap']}),
+    P('milts','Milt\'s Stop & Eat',38.5800,-109.5400,{price:14,rating:4.6,reviews:2600,buzz:30,pop:.55,cuisine:'Burgers',src:'places'}),
+    P('swig','Dirty soda shop',37.1040,-113.5650,{price:5,rating:4.4,reviews:900,buzz:80,pop:.6,cuisine:'Dirty soda',src:'places',d:'Utah\'s soda-shop culture: Diet Coke + coconut + lime. Ask a local about "dirty" sodas.',sponsored:true})
+  ],
+  transit: [
+    P('blue','TRAX Blue Line',40.66,-111.89,{color:'#2f6db5',freq:15,coords:[[-111.9095,40.7624],[-111.9010,40.7680],[-111.8910,40.7700],[-111.8910,40.7610],[-111.8910,40.7530],[-111.8960,40.7400],[-111.8990,40.7250],[-111.8990,40.7000],[-111.8950,40.6670],[-111.8920,40.6200],[-111.8900,40.5800],[-111.8890,40.5640],[-111.8890,40.5170]],src:'uta'}),
+    P('red','TRAX Red Line',40.70,-111.92,{color:'#c0453b',freq:15,coords:[[-111.8380,40.7700],[-111.8420,40.7650],[-111.8500,40.7600],[-111.8800,40.7600],[-111.8910,40.7610],[-111.8910,40.7530],[-111.8960,40.7400],[-111.8990,40.7250],[-111.8990,40.7000],[-111.8950,40.6670],[-111.8960,40.6400],[-111.9400,40.6100],[-111.9800,40.5600],[-112.0110,40.5320]],src:'uta',d:'Connects the University of Utah to downtown and Daybreak.',personas:['student']}),
+    P('green','TRAX Green Line',40.76,-111.95,{color:'#3f9a5b',freq:15,coords:[[-111.9780,40.7880],[-111.9300,40.7710],[-111.9095,40.7624],[-111.9010,40.7680],[-111.8910,40.7700],[-111.8910,40.7530],[-111.8960,40.7400],[-111.8990,40.7250],[-111.9300,40.7100],[-111.9650,40.6930]],src:'uta',d:'Airport to downtown in about 20 minutes.',personas:['visitor']}),
+    P('sline','S-Line streetcar',40.724,-111.88,{color:'#7aa36f',freq:20,coords:[[-111.8990,40.7250],[-111.8800,40.7245],[-111.8570,40.7230]],src:'uta'}),
+    P('frontrunner','FrontRunner',40.72,-111.90,{color:'#6b4f8f',freq:30,coords:[[-111.9800,41.2200],[-111.9700,41.0600],[-111.9010,40.9830],[-111.9020,40.8740],[-111.9095,40.7624],[-111.9000,40.6670],[-111.9150,40.5500],[-111.8930,40.4300],[-111.7230,40.3000],[-111.6640,40.2260]],src:'uta',d:'Commuter rail Ogden ↔ SLC ↔ Lehi ↔ Provo.'}),
+    P('bus994','Ski bus 994 (Little Cottonwood)',40.60,-111.72,{color:'#b0714b',freq:30,coords:[[-111.8000,40.6380],[-111.7870,40.6180],[-111.7960,40.5720],[-111.7500,40.5740],[-111.7000,40.5780],[-111.6570,40.5810],[-111.6386,40.5884]],src:'uta',d:'Winter ski service to Snowbird & Alta. Skip the canyon parking crunch.'}),
+    P('bus972','Ski bus 972 (Big Cottonwood)',40.62,-111.70,{color:'#d2ad7b',freq:30,coords:[[-111.8000,40.6380],[-111.7760,40.6190],[-111.7200,40.6300],[-111.6600,40.6360],[-111.6000,40.6200],[-111.5832,40.5980]],src:'uta',d:'Winter ski service to Solitude & Brighton; stops at Donut Falls & Mill B trailheads.'})
+  ],
+  roads: [
+    P('sr210','SR-210 Little Cottonwood',40.58,-111.72,{status:'Traction law: 4WD/AWD or chains',level:'warn',canyon:'LCC',coords:[[-111.796,40.572],[-111.750,40.574],[-111.700,40.578],[-111.657,40.581],[-111.6386,40.5884]],src:'udot'}),
+    P('sr190','SR-190 Big Cottonwood',40.62,-111.68,{status:'Traction law in effect',level:'warn',canyon:'BCC',coords:[[-111.776,40.619],[-111.720,40.630],[-111.660,40.636],[-111.600,40.620],[-111.5832,40.598]],src:'udot'}),
+    P('mcc','Millcreek Canyon Rd',40.69,-111.72,{status:'Open · fee station ($5)',level:'ok',canyon:'MCC',coords:[[-111.790,40.6890],[-111.760,40.7020],[-111.720,40.6950],[-111.680,40.6880],[-111.651,40.6835]],src:'udot'}),
+    P('i80p','I-80 Parleys Canyon',40.72,-111.70,{status:'Wet, open · 61 mph',level:'ok',canyon:'I-80',coords:[[-111.860,40.715],[-111.800,40.710],[-111.740,40.725],[-111.660,40.735],[-111.580,40.730],[-111.530,40.730]],src:'udot'}),
+    P('i15pom','I-15 Point of the Mountain',40.47,-111.89,{status:'Heavy · 28 mph',level:'bad',coords:[[-111.900,40.530],[-111.895,40.480],[-111.880,40.440],[-111.850,40.400]],src:'udot'}),
+    P('i15dt','I-15 downtown',40.73,-111.90,{status:'Moderate · 48 mph',level:'warn',coords:[[-111.905,40.800],[-111.905,40.760],[-111.903,40.720],[-111.900,40.660]],src:'udot'}),
+    P('us189','US-189 Provo Canyon',40.36,-111.59,{status:'Open, dry',level:'ok',canyon:'US-189',coords:[[-111.660,40.320],[-111.620,40.340],[-111.580,40.360],[-111.530,40.410]],src:'udot'})
+  ],
+  cams: [
+    P('camlcc','LCC mouth camera',40.5720,-111.7960,{src:'udot'}), P('cambcc','BCC mouth camera',40.6190,-111.7760,{src:'udot'}),
+    P('camparleys','Parleys Summit camera',40.7300,-111.6100,{src:'udot'}), P('campom','Point of the Mountain camera',40.4800,-111.8950,{src:'udot'})
+  ],
+  parking: [
+    P('gateway','Gateway garage',40.7660,-111.9030,{price:8,spaces:'420 open',src:'parking'}), P('citycreek','City Creek garage',40.7690,-111.8930,{price:10,spaces:'180 open',src:'parking'}),
+    P('libsq','Library Square garage',40.7608,-111.8845,{price:6,spaces:'90 open',src:'parking'}), P('uofu','U of U visitor lot (Rice-Eccles)',40.7600,-111.8490,{price:5,spaces:'260 open',src:'parking',personas:['student']}),
+    P('pr6200','6200 S Park & Ride (ski buses)',40.6380,-111.8000,{price:0,spaces:'Fills by 8am',src:'parking',personas:['outdoors','cheap']}),
+    P('altalot','Alta parking (reservation)',40.5900,-111.6370,{price:25,spaces:'Reserve ahead',src:'parking'})
+  ],
+  gas: [
+    P('mav1','Maverik — 400 S',40.7600,-111.8780,{price:3.39,src:'fuel',d:'Maverik ("Adventure\'s First Stop") is a Utah-born chain — locals swear by the burritos.'}),
+    P('g2','Fuel — North Temple',40.7710,-111.9400,{price:3.29,src:'fuel'}), P('g3','Fuel — Sandy',40.5700,-111.8900,{price:3.35,src:'fuel'}),
+    P('g4','Fuel — Park City Kimball Jct.',40.7230,-111.5450,{price:3.69,src:'fuel'}), P('g5','Fuel — Provo',40.2400,-111.6600,{price:3.31,src:'fuel'}),
+    P('g6','Fuel — Ogden',41.2200,-111.9600,{price:3.27,src:'fuel'}), P('g7','Fuel — Moab',38.5800,-109.5500,{price:3.89,src:'fuel'}),
+    P('g8','Fuel — St. George',37.1000,-113.5800,{price:3.59,src:'fuel'})
+  ],
+  rideshare: [
+    P('rsairport','Airport rideshare pickup',40.7880,-111.9780,{src:'rideshare'}), P('rsuofu','U of U rideshare zone',40.7650,-111.8470,{src:'rideshare'}),
+    P('rsdelta','Delta Center rideshare zone',40.7680,-111.9020,{src:'rideshare'}), P('rspc','Park City Main St pickup',40.6440,-111.4960,{src:'rideshare'}),
+    P('rsprovo','Provo Central Station',40.2260,-111.6640,{src:'rideshare'})
+  ],
+  community: [
+    P('c1','Locals\' pick: sledding hill',40.7205,-111.8460,{by:'@sugarhouse_sam',src:'community',d:'Best sledding in the valley. Bring a cheap saucer, not a fancy sled.'}),
+    P('c2','Locals\' pick: sunset over the Great Salt Lake',40.7340,-112.2110,{by:'@saltair_sunsets',src:'community',d:'Great Salt Lake marina. Smells like brine shrimp; worth it.'}),
+    P('c3','Board-game café meetup',40.7570,-111.8720,{by:'@newinslc',src:'community',d:'Thursday newcomer game night. Ask for the "new to Utah" table.'}),
+    P('c4','Pickup soccer (all levels)',40.2400,-111.6500,{by:'@provo_futbol',src:'community'})
+  ],
+  uni: [
+    P('uou','University of Utah',40.7649,-111.8421,{events:42,src:'campus',personas:['student']}), P('byu','BYU',40.2518,-111.6493,{events:31,src:'campus',personas:['student']}),
+    P('usu','Utah State University',41.7452,-111.8097,{events:18,src:'campus',personas:['student']}), P('uvu','Utah Valley University',40.2783,-111.7140,{events:20,src:'campus',personas:['student']}),
+    P('weber','Weber State',41.1925,-111.9440,{events:14,src:'campus',personas:['student']}), P('suu','Southern Utah University',37.6750,-113.0710,{events:9,src:'campus',personas:['student']}),
+    P('utech','Utah Tech University',37.1036,-113.5652,{events:8,src:'campus',personas:['student']}), P('westminster','Westminster University',40.7310,-111.8541,{events:7,src:'campus',personas:['student']}),
+    P('slcc','Salt Lake Community College',40.6740,-111.9480,{events:10,src:'campus',personas:['student']})
+  ],
+  libraries: [
+    P('slcmain','SLC Main Library',40.7614,-111.8838,{services:'Free Wi-Fi · makerspace · ESL · rooftop',src:'library',d:'Climb the crescent wall to the rooftop garden for a skyline view.'}),
+    P('marriott','Marriott Library (U of U)',40.7623,-111.8461,{services:'Study rooms · 3D printing',src:'library',personas:['student']}),
+    P('sprague','Sprague Library (Sugar House)',40.7230,-111.8587,{services:'Historic 1928 branch',src:'library'}),
+    P('provolib','Provo City Library',40.2318,-111.6588,{services:'Wi-Fi · events',src:'library'}),
+    P('weberlib','Weber County Main Library',41.2194,-111.9654,{services:'Wi-Fi · makerspace',src:'library'}),
+    P('viridian','SLCo Library Viridian Center',40.6087,-111.9393,{services:'Event center · Wi-Fi',src:'library'}),
+    P('pclib','Park City Library',40.6553,-111.5003,{services:'Wi-Fi · film series',src:'library'})
+  ],
+  wifi: [
+    P('w1','Library Square free Wi-Fi',40.7614,-111.8838,{speed:'~200 Mbps',src:'wifi'}), P('w2','Gallivan Center Wi-Fi',40.7647,-111.8889,{speed:'~80 Mbps',src:'wifi'}),
+    P('w3','SLC Airport Wi-Fi',40.7899,-111.9791,{speed:'~120 Mbps',src:'wifi'}), P('w4','Liberty Park Wi-Fi',40.7457,-111.8746,{speed:'~40 Mbps',src:'wifi'}),
+    P('w5','Lehi City Library Wi-Fi',40.3897,-111.8510,{speed:'~150 Mbps',src:'wifi',personas:['remote']}),
+    P('w6','Ogden Union Station Wi-Fi',41.2210,-111.9810,{speed:'~60 Mbps',src:'wifi'}), P('w7','Provo City Library Wi-Fi',40.2318,-111.6588,{speed:'~150 Mbps',src:'wifi'})
+  ],
+  outages: [
+    P('o1','Fiber cut — Silicon Slopes office parks',40.4310,-111.8900,{state:'Active',level:'bad',provider:'Business fiber (demo)',since:'2h ago',src:'broadband',d:'The outage that annoyed the judges. Nearest backup Wi-Fi: Lehi City Library (3 km).'}),
+    P('o2','Degraded cable service — Draper',40.5250,-111.8640,{state:'Degraded',level:'warn',provider:'Cable (demo)',since:'40m ago',src:'broadband'}),
+    P('o3','Resolved — Ogden downtown',41.2230,-111.9700,{state:'Resolved',level:'ok',provider:'DSL (demo)',since:'this morning',src:'broadband'})
+  ],
+  visitor: [
+    P('capvc','Utah State Capitol tours',40.7774,-111.8882,{price:0,src:'tourism'}), P('slcvc','Visit Salt Lake info center',40.7670,-111.8960,{price:0,src:'tourism'}),
+    P('pcvc','Park City visitor center',40.7225,-111.5450,{price:0,src:'tourism'}), P('moabvc','Moab Information Center',38.5735,-109.5497,{price:0,src:'tourism'}),
+    P('zionvc','Zion Canyon visitor center',37.2003,-112.9871,{price:0,src:'tourism',brochure:true})
+  ],
+  landmarks: [
+    P('capitol','Utah State Capitol',40.7774,-111.8882,{price:0,pop:.7,src:'history'}),
+    P('templesq','Temple Square',40.7704,-111.8919,{price:0,pop:.9,brochure:true,src:'history'}),
+    P('goldenspike','Golden Spike NHP',41.6177,-112.5519,{price:20,pop:.4,src:'history',d:'Where the transcontinental railroad met in 1869.'}),
+    P('saltflats','Bonneville Salt Flats',40.7700,-113.8900,{price:0,pop:.6,src:'history',d:'Land-speed records since 1914. Mirror-flat after rain.'}),
+    P('leonardo','The Leonardo museum',40.7609,-111.8847,{price:20,pop:.5,src:'history'}),
+    P('umfa','Utah Museum of Fine Arts',40.7604,-111.8409,{price:0,pop:.45,src:'history',personas:['student']}),
+    P('gslmarina','Great Salt Lake Marina',40.7340,-112.2110,{price:0,pop:.4,src:'history'})
+  ],
+  lore: [
+    P('gilgal','Gilgal Sculpture Garden',40.7581,-111.8735,{price:0,pop:.4,src:'lore',d:'A hidden garden with a sphinx wearing Joseph Smith\'s face, tucked behind houses in central SLC.'}),
+    P('frysauce','Fry sauce, explained',40.7240,-111.8880,{pop:.3,src:'lore',d:'Ketchup + mayo. Utah claims it. Every burger joint has a version; locals have opinions.'}),
+    P('bearlake','Bear Lake Monster',41.9500,-111.3300,{pop:.3,src:'lore',d:'Sightings since the 1860s. The lake\'s turquoise color is real; the monster is "debated".'}),
+    P('iosepa','Iosepa (Hawaiian ghost town)',40.5450,-112.7300,{pop:.2,src:'lore',d:'A Hawaiian settlement in the Skull Valley desert (1889–1917). Memorial Day luau still held.'}),
+    P('mdrs','Mars Desert Research Station',38.4064,-110.7917,{pop:.2,src:'lore',d:'Scientists live in a simulated Mars habitat near Hanksville.'}),
+    P('holerock','Hole N\' The Rock',38.3786,-109.4580,{price:8,pop:.4,src:'lore',d:'A 5,000 sq ft home carved into a cliff. Roadside Americana at its finest.'})
+    // TODO(team): add "The Whale" — local landmark w/ lore. Same shape: P('whale','The Whale', lat, lng, {d:'…', src:'lore'})
+  ],
+  art: [
+    P('jetty','Spiral Jetty',41.4377,-112.6689,{price:0,pop:.45,src:'arts',d:'Robert Smithson\'s 1970 earthwork. Water level decides whether you see it pink, white, or not at all.'}),
+    P('suntunnels','Sun Tunnels',41.3034,-113.8640,{price:0,pop:.3,src:'arts',d:'Four concrete tubes aligned to solstice sunrises and sunsets in the west desert.'}),
+    P('treeofutah','Metaphor: The Tree of Utah',40.7690,-113.4760,{price:0,pop:.3,src:'arts',d:'An 87-ft concrete "tree" alone on I-80 in the salt flats.'}),
+    P('granary','Granary District murals',40.7520,-111.9010,{price:0,pop:.35,src:'arts'})
+  ],
+  film: [
+    P('grafton','Grafton ghost town',37.1660,-113.0820,{price:0,pop:.35,src:'history',d:'Pioneer ghost town; the bicycle scene in "Butch Cassidy" was filmed here.'}),
+    P('thistle','Thistle (landslide ghost town)',39.9925,-111.4900,{price:0,pop:.25,src:'history',d:'Swallowed by a 1983 landslide-dammed lake. Houses still half-submerged.'}),
+    P('kanab','Kanab — "Little Hollywood"',37.0474,-112.5263,{price:0,pop:.35,src:'history'}),
+    P('monument','Monument Valley',37.0042,-110.1129,{price:8,pop:.8,brochure:true,src:'history'}),
+    P('silverreef','Silver Reef',37.2520,-113.3650,{price:0,pop:.2,src:'history'})
+  ],
+  alerts: [
+    P('aqa','Air Quality Alert — Salt Lake & Davis',40.70,-111.95,{level:'warn',until:'Sun 6 pm',src:'nws',ring:[[-112.15,40.48],[-111.80,40.48],[-111.80,40.85],[-111.90,40.98],[-112.15,40.85],[-112.15,40.48]],d:'Stagnant air under a valley inversion. Sensitive groups limit outdoor exertion in the valley.'}),
+    P('aqcache','Air Quality Alert — Cache Valley',41.75,-111.85,{level:'bad',until:'Mon noon',src:'nws',ring:[[-111.98,41.55],[-111.75,41.55],[-111.75,41.98],[-111.98,41.98],[-111.98,41.55]]}),
+    P('wwa','Winter Weather Advisory — Wasatch Mtns',40.70,-111.60,{level:'info',until:'Sat 11 am',src:'nws',ring:[[-111.78,40.45],[-111.45,40.45],[-111.45,41.0],[-111.75,41.0],[-111.78,40.45]],d:'3–6" of snow above 8,000 ft. Fresh powder above the smog.'})
+  ],
+  avy: [
+    P('avsl','Salt Lake mountains',40.6,-111.66,{danger:'Moderate',src:'uac',ring:[[-111.82,40.45],[-111.50,40.45],[-111.50,40.78],[-111.80,40.78],[-111.82,40.45]]}),
+    P('avog','Ogden mountains',41.2,-111.8,{danger:'Low',src:'uac',ring:[[-111.95,41.0],[-111.65,41.0],[-111.65,41.45],[-111.90,41.45],[-111.95,41.0]]}),
+    P('avpr','Provo mountains',40.3,-111.6,{danger:'Moderate',src:'uac',ring:[[-111.75,40.15],[-111.45,40.15],[-111.45,40.45],[-111.70,40.45],[-111.75,40.15]]}),
+    P('avui','Uintas',40.72,-110.6,{danger:'Considerable',src:'uac',ring:[[-111.2,40.5],[-110.0,40.5],[-110.0,40.95],[-111.2,40.95],[-111.2,40.5]]}),
+    P('avlo','Logan mountains',41.8,-111.6,{danger:'Low',src:'uac',ring:[[-111.78,41.6],[-111.4,41.6],[-111.4,42.0],[-111.75,42.0],[-111.78,41.6]]})
+  ]
+};
+
+const SOURCES = {
+  nws:{name:'National Weather Service API', url:'https://www.weather.gov/documentation/services-web-api'},
+  daq:{name:'Utah DAQ air quality', url:'https://air.utah.gov/'},
+  ceil:{name:'Utah DAQ ceilometer + mountain stations (smog height)'},
+  uac:{name:'Utah Avalanche Center', url:'https://utahavalanchecenter.org/'},
+  skiutah:{name:'Ski Utah snow report', url:'https://www.skiutah.com/'},
+  uta:{name:'UTA GTFS', url:'https://www.rideuta.com/'}, 'uta-rt':{name:'UTA GTFS-Realtime'},
+  udot:{name:'UDOT Traffic', url:'https://udottraffic.utah.gov/'},
+  ticketmaster:{name:'Ticketmaster Discovery · AllEvents · NowPlayingUtah'}, campus:{name:'U of U Campus Connect', url:'https://campusconnect.utah.edu/'},
+  library:{name:'Utah Public Libraries GIS · SLCo Library'}, ugrc:{name:'UGRC Trailheads, Trails & Pathways', url:'https://gis.utah.gov/'},
+  nps:{name:'NPS API', url:'https://www.nps.gov/subjects/developer/'}, places:{name:'UGRC Open Source Places · OSM'},
+  fuel:{name:'UGRC Utah State Fuel Sites'}, parking:{name:'Curated parking (demo)'}, wifi:{name:'SLC public Wi-Fi list'},
+  broadband:{name:'Utah Broadband Service Areas · outage reports'}, tourism:{name:'Visit Utah · Visit Salt Lake'},
+  history:{name:'Utah Historical Society GIS'}, arts:{name:'Utah public-art map'}, lore:{name:'YOUtah local lore (curated)'},
+  community:{name:'Community submissions'}, census:{name:'Census ACS · Utah SGID'}, usgs:{name:'Elevation: AWS Terrain Tiles / USGS'},
+  ml:{name:'YOUtah crowd model (demo)'}, maptiler:{name:'MapTiler Terrain RGB + Contours', url:'https://www.maptiler.com/'}, rideshare:{name:'Fare estimate (formula)'}, grid:{name:'Utah street-grid math'}
+};
+
+/* =========================================================================
+   4. Layer registry — every feature lives here, grouped by category, tagged by persona
+   ========================================================================= */
+const CATS = [
+  { id:'conditions', emoji:'🌤' }, { id:'move', emoji:'🚆' }, { id:'do', emoji:'🎟' },
+  { id:'services', emoji:'🤝' }, { id:'culture', emoji:'🏛' }, { id:'context', emoji:'📊' }
+];
+const PERSONAS = ['visitor','student','newcomer','outdoors','remote','cheap'];
+const LAYERS = [
+  { id:'inversion', cat:'conditions', name:'Smog lid (inversion estimate)', emoji:'🌫', color:PAL.smog, kind:'special', on:true, personas:['outdoors','visitor','newcomer'], src:'ceil' },
+  { id:'aq', cat:'conditions', name:'Air-quality monitors', emoji:'💨', color:PAL.smog, kind:'point', on:true, personas:['outdoors','newcomer'], src:'daq' },
+  { id:'wx', cat:'conditions', name:'Weather stations', emoji:'🌡', color:PAL.glacier, kind:'point', personas:['outdoors','visitor'], src:'nws' },
+  { id:'alerts', cat:'conditions', name:'Weather & air alerts', emoji:'⚠️', color:PAL.gold, kind:'fill', personas:['visitor','outdoors','newcomer'], src:'nws' },
+  { id:'ski', cat:'conditions', name:'Ski resorts & snow', emoji:'⛷', color:PAL.lake, kind:'point', personas:['outdoors','visitor'], src:'skiutah' },
+  { id:'avy', cat:'conditions', name:'Avalanche danger', emoji:'🏔', color:'#e8873a', kind:'fill', personas:['outdoors'], src:'uac' },
+  { id:'transit', cat:'move', name:'TRAX, FrontRunner & ski buses', emoji:'🚆', color:PAL.lake, kind:'line', on:true, personas:['student','visitor','newcomer','cheap'], src:'uta' },
+  { id:'vehicles', cat:'move', name:'Live vehicles', emoji:'🚌', color:PAL.glacier, kind:'special', heavy:true, personas:['student','visitor'], src:'uta-rt' },
+  { id:'roads', cat:'move', name:'Road conditions & traffic', emoji:'🛣', color:PAL.gold, kind:'line', personas:['outdoors','visitor','newcomer'], src:'udot' },
+  { id:'cams', cat:'move', name:'Traffic cameras', emoji:'📷', color:PAL.slate, kind:'point', personas:['outdoors'], src:'udot' },
+  { id:'parking', cat:'move', name:'Parking', emoji:'🅿️', color:PAL.slate, kind:'point', personas:['visitor','newcomer'], src:'parking' },
+  { id:'gas', cat:'move', name:'Gas prices', emoji:'⛽', color:PAL.rust, kind:'point', personas:['visitor','newcomer','cheap'], src:'fuel' },
+  { id:'rideshare', cat:'move', name:'Rideshare pickup zones', emoji:'🚕', color:PAL.gold, kind:'point', personas:['visitor'], src:'rideshare' },
+  { id:'events', cat:'do', name:'Events (time slider)', emoji:'🎟', color:PAL.clay, kind:'point', on:true, personas:PERSONAS, src:'ticketmaster' },
+  { id:'trailheads', cat:'do', name:'Trailheads', emoji:'🥾', color:PAL.moss, kind:'point', on:true, personas:['outdoors','visitor','newcomer','cheap'], src:'ugrc' },
+  { id:'trails', cat:'do', name:'Trails & pathways', emoji:'〰', color:PAL.bark, kind:'line', personas:['outdoors','cheap'], src:'ugrc' },
+  { id:'parks', cat:'do', name:'National & state parks', emoji:'🏜', color:PAL.sandstone, kind:'point', personas:['visitor','outdoors'], src:'nps' },
+  { id:'spaces', cat:'do', name:'Public spaces worth visiting', emoji:'🌳', color:PAL.moss, kind:'point', personas:['newcomer','cheap','student'], src:'ugrc' },
+  { id:'food', cat:'do', name:'Food & cafés', emoji:'🍜', color:PAL.clay, kind:'point', on:true, personas:['visitor','student','newcomer','remote','cheap'], src:'places' },
+  { id:'community', cat:'services', name:'Community picks & meetups', emoji:'🤝', color:PAL.teal, kind:'point', on:true, personas:['newcomer','student'], src:'community' },
+  { id:'uni', cat:'services', name:'Universities', emoji:'🎓', color:'#c0453b', kind:'point', personas:['student'], src:'campus' },
+  { id:'libraries', cat:'services', name:'Public libraries', emoji:'📚', color:PAL.plum, kind:'point', personas:['student','newcomer','remote','cheap'], src:'library' },
+  { id:'wifi', cat:'services', name:'Free public Wi-Fi', emoji:'📶', color:PAL.glacier, kind:'point', personas:['remote','student','cheap','visitor'], src:'wifi' },
+  { id:'outages', cat:'services', name:'Internet outages', emoji:'📡', color:'#d9694a', kind:'point', personas:['remote'], src:'broadband' },
+  { id:'visitor', cat:'services', name:'Visitor & tourism centers', emoji:'ℹ️', color:PAL.lake, kind:'point', personas:['visitor'], src:'tourism' },
+  { id:'lore', cat:'culture', name:'Local lore', emoji:'🐋', color:PAL.plum, kind:'point', on:true, personas:['visitor','newcomer','student'], src:'lore' },
+  { id:'landmarks', cat:'culture', name:'Landmarks & museums', emoji:'🏛', color:PAL.bark, kind:'point', personas:['visitor','newcomer'], src:'history' },
+  { id:'art', cat:'culture', name:'Public & land art', emoji:'🎨', color:PAL.rust, kind:'point', personas:['visitor','student'], src:'arts' },
+  { id:'film', cat:'culture', name:'Ghost towns & film sites', emoji:'🎬', color:PAL.slate, kind:'point', personas:['visitor','outdoors'], src:'history' },
+  { id:'crowds', cat:'context', name:'Predicted crowds (ML heatmap)', emoji:'🔥', color:'#e8873a', kind:'heat', heavy:true, personas:['visitor','newcomer'], src:'ml' },
+  { id:'grid', cat:'context', name:'Street-grid addresses (street zoom)', emoji:'#', color:PAL.slate, kind:'special', on:true, personas:['visitor','newcomer','student'], src:'grid' },
+  { id:'contours', cat:'context', name:'Contour lines + smog line', emoji:'〽', color:PAL.bark, kind:'special', on:true, personas:['outdoors'], src:'maptiler' },
+  { id:'hillshade', cat:'context', name:'Terrain shading', emoji:'⛰', color:PAL.sage, kind:'special', on:true, personas:[], src:'usgs' }
+];
+const LBYID = Object.fromEntries(LAYERS.map(l => [l.id, l]));
+const PRESETS = {
+  visitor:['events','food','lore','landmarks','parks','visitor','transit','parking','rideshare','spaces','art','alerts'],
+  student:['events','uni','libraries','wifi','transit','food','community','spaces','lore'],
+  newcomer:['events','community','libraries','transit','spaces','food','gas','lore','alerts'],
+  outdoors:['trailheads','trails','ski','avy','wx','aq','roads','parks','transit','alerts'],
+  remote:['wifi','outages','libraries','food','transit'],
+  cheap:['events','transit','libraries','wifi','spaces','food','gas','trailheads']
+};
+const PRESET_CONTEXT = { remote:'bb', newcomer:'land', student:'age' };
+const CONTEXTS = {
+  none:{ name:'None' },
+  land:{ name:'Urban / suburban / industrial', src:'census' },
+  pop:{ name:'Population density', src:'census', ramp:[[0,'#e9e6d9'],[500,'#c8d1b0'],[1500,'#8fae8a'],[3000,'#4f8a86'],[5000,'#1f4f5a']], unit:'people / km²' },
+  age:{ name:'Median age', src:'census', ramp:[[22,'#3f7f99'],[28,'#8fb3c2'],[34,'#e9e6d9'],[40,'#d2ad7b'],[46,'#b0714b']], unit:'years' },
+  bb:{ name:'Broadband speed (advertised)', src:'broadband', ramp:[[25,'#b0714b'],[100,'#d2ad7b'],[300,'#c8d1b0'],[600,'#6fa8bf'],[1000,'#2f6db5']], unit:'Mbps' },
+  aqi:{ name:'Air quality surface (AQI)', src:'daq', ramp:[[0,'#7fb77e'],[50,'#cfd77a'],[100,'#e2b84b'],[150,'#d9694a'],[200,'#8a3f5a']], unit:'AQI' }
+};
+const LAND_COLORS = { 'Urban core':'#4b6470', Suburban:'#8fae8a', Exurban:'#c8d1b0', 'Rural / open':'#e9e1c7', Industrial:'#a2553c', 'Mountain / forest':'#5f7d4f' };
+
+/* Registry of every item by global id "layer:id" */
+const BYID = {};
+function indexData() {
+  for (const k in BYID) delete BYID[k];
+  for (const [layer, items] of Object.entries(DATA)) for (const it of items) { it.layer = layer; it.gid = `${layer}:${it.id}`; BYID[it.gid] = it; }
+}
+indexData();
+
+/* =========================================================================
+   5. State
+   ========================================================================= */
+const lowSpec = isMobile() || (navigator.deviceMemory && navigator.deviceMemory <= 4) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4);
+const state = {
+  t: 0, lang: store.get('lang', (navigator.language || 'en').slice(0, 2)), persona: null, offBrochure: false, fitBudget: false,
+  three: store.get('3d', !lowSpec), layers: new Set(LAYERS.filter(l => l.on).map(l => l.id)), context: 'none',
+  selected: null, plan: store.get('plan', []), budget: store.get('budget', 120), origin: { ...CONFIG.defaultOrigin },
+  pickMode: false, capOverride: null, openCats: new Set(['conditions', 'do'])
+};
+if (!I18N[state.lang]) state.lang = 'en';
+const tAt = () => new Date(NOW.getTime() + state.t * 3600e3);
+
+/* =========================================================================
+   6. Models: inversion, crowds (ML stand-in), feed ranking, get-there
+   ========================================================================= */
+/* Smog-cap estimate. Real version: Utah DAQ ceilometer mixing height + where mountain-station
+   temperatures flip from cooling to warming with height. Demo: diurnal curve around 1,600 m. */
+function capHeight(T = tAt()) {
+  if (state.capOverride) return state.capOverride;
+  const h = T.getHours() + T.getMinutes() / 60, days = (T - NOW) / 864e5;
+  return Math.round(1600 + 140 * Math.sin((h - 9) / 24 * 2 * Math.PI) - 25 * days);
+}
+function valleyAQI(T = tAt()) {
+  const h = T.getHours(), days = (T - NOW) / 864e5;
+  return Math.max(20, Math.round(124 + 12 * Math.sin((h - 6) / 24 * 2 * Math.PI) + 6 * days));
+}
+function aqiInfo(a) {
+  return a <= 50 ? ['Good', 'good'] : a <= 100 ? ['Moderate', 'warn'] : a <= 150 ? ['Unhealthy for sensitive groups', 'bad'] : ['Unhealthy', 'bad'];
+}
+function escapes(T = tAt(), n = 3) {
+  const cap = capHeight(T);
+  return DATA.trailheads.filter(x => x.basin && x.elev > cap + 80)
+    .map(x => ({ x, d: km(state.origin, x), road: DATA.roads.find(r => r.canyon && r.canyon === x.canyon) }))
+    .sort((a, b) => a.d - b.d).slice(0, n);
+}
+
+/* Crowd model stand-in: category hourly profiles × popularity prior + stable per-place noise.
+   Real version: Bayesian Poisson / GBM trained on historical attendance, check-ins & buzz (backtested). */
+const PROFILES = {
+  food:[0,0,0,0,0,0,.1,.2,.3,.3,.4,.7,.9,.6,.4,.4,.6,.9,1,.8,.5,.3,.1,0],
+  trailheads:[0,0,0,0,0,0,.1,.3,.6,.9,1,.9,.8,.7,.6,.5,.4,.2,.1,0,0,0,0,0],
+  ski:[0,0,0,0,0,0,0,.2,.8,1,.9,.8,.6,.7,.6,.4,.1,0,0,0,0,0,0,0],
+  libraries:[0,0,0,0,0,0,0,0,0,.2,.4,.5,.5,.6,.7,.8,.8,.6,.4,.2,0,0,0,0],
+  uni:[0,0,0,0,0,0,0,.2,.6,.9,1,1,.9,.9,.8,.6,.4,.3,.3,.2,.1,0,0,0],
+  spaces:[0,0,0,0,0,0,.1,.2,.3,.5,.7,.8,.9,.9,.9,.8,.7,.6,.4,.2,.1,0,0,0],
+  default:[0,0,0,0,0,0,.1,.2,.3,.4,.6,.7,.7,.7,.7,.7,.7,.7,.6,.5,.4,.2,.1,0]
+};
+function busy(it, T = tAt()) {
+  if (it.layer === 'events') {
+    if (T < new Date(it.start.getTime() - 3600e3) || T > it.end) return 0;
+    return Math.min(1, (it.pop || .5) * (T < it.start ? .5 : 1.05));
+  }
+  const prof = PROFILES[it.layer] || PROFILES.default;
+  const weekend = [0, 6].includes(T.getDay()) ? 1.15 : 1;
+  let v = prof[T.getHours()] * (it.pop ?? .45) * weekend * (0.85 + 0.3 * hash01(it.gid));
+  if (it.layer === 'trailheads' && it.basin && it.elev > capHeight(T)) v *= 1.25; // inversion escape demand
+  return Math.max(0, Math.min(1, v));
+}
+function bestHour(it) {
+  const T = tAt(); let best = null;
+  for (let h = 8; h <= 20; h++) { const x = new Date(T); x.setHours(h, 0, 0, 0); const b = busy(it, x); if (best == null || b < best.b) best = { h, b }; }
+  return best;
+}
+
+/* "What's most interesting right now" ranking (hand-tuned weights; ML score mixes in) */
+function feed() {
+  const T = tAt(), out = [], cap = capHeight(T), aqi = valleyAQI(T);
+  const push = (it, score, reasons, when) => {
+    if (state.offBrochure && it.brochure) return;
+    if (state.persona && (it.personas || LBYID[it.layer]?.personas || []).includes(state.persona)) { score += 14; reasons.push(t(state.persona)); }
+    if (it.sponsored) { score += 6; }
+    const d = km(state.origin, it); score -= Math.min(18, d / 6);
+    if (state.offBrochure && !it.brochure) score += 4;
+    out.push({ it, score, reasons, when, d, over: state.fitBudget && (it.price || 0) > remainingBudget() });
+  };
+  for (const e of DATA.events) {
+    if (e.end < T) continue;
+    const hrs = (e.start - T) / 3600e3; if (hrs > 36) continue;
+    const r = [], live = hrs <= 0;
+    let s = 45 * (e.pop || .5) + (live ? 26 : hrs < 3 ? 20 : hrs < 8 ? 11 : 3);
+    if (live) r.push('Happening now'); else if (hrs < 3) { const m = Math.max(5, Math.round(hrs * 60 / 5) * 5); r.push(m < 60 ? `Starts in ${m} min` : `Starts in ${hrs.toFixed(1)} h`); }
+    if (e.price === 0) { s += 6; r.push('Free'); }
+    push(e, s, r, `${fmtDay(e.start)} ${fmtTime(e.start)} · ${e.venue}`);
+  }
+  if (aqi > 100) for (const { x, road } of escapes(T, 3)) {
+    const r = ['Above the smog', `+${x.elev - cap} m`]; if (x.bus) r.push(`Bus ${x.bus}`);
+    push(x, 52 + (x.pop || .5) * 10, r, `${x.diff} · ${x.km} km · ${road ? road.status : 'road open'}`);
+  }
+  for (const s of DATA.ski) if (s.snow24 >= 4) push(s, 30 + s.snow24 * 3, [`${s.snow24}" new snow`, `${s.wait} min lift wait`], `${s.lifts}/${s.liftsTotal} lifts · ${money(s.price)}`);
+  for (const f of DATA.food) if ((f.buzz || 0) > 35) { const b = busy(f, T); push(f, 22 + f.buzz / 8, ['Trending', b > .7 ? 'Busy now' : 'Short wait'], `${f.cuisine} · ★ ${f.rating}`); }
+  const lore = DATA.lore[Math.floor(hash01(NOW.toDateString()) * DATA.lore.length)];
+  push(lore, 34, ['Local secret'], 'Today\'s piece of Utah lore');
+  for (const c of DATA.community.slice(0, 2)) push(c, 24, ['From locals'], c.by || 'Community');
+  const o = DATA.outages.find(x => x.state === 'Active'); if (o) push(o, state.persona === 'remote' ? 50 : 18, ['Internet outage'], o.provider);
+  return out.sort((a, b) => b.score - a.score).slice(0, 14);
+}
+
+function nearestTransit(p) {
+  let best = null;
+  for (const l of DATA.transit) for (const c of l.coords) { const d = km(p, { lat: c[1], lng: c[0] }); if (!best || d < best.d) best = { d, l }; }
+  return best;
+}
+function getThere(it) {
+  const d = km(state.origin, it), m = mi(d), tr = nearestTransit(it);
+  const driveMin = Math.round(d / (d < 15 ? 38 : 85) * 60 + 4);
+  const fare = 2.6 + 1.25 * m + 0.3 * driveMin;
+  const park = DATA.parking.map(p => ({ p, d: km(p, it) })).sort((a, b) => a.d - b.d)[0];
+  const rows = [];
+  if (it.bus) rows.push(['🚌', `UTA ski bus ${it.bus} stops at the trailhead · from 6200 S Park & Ride`]);
+  else if (tr && tr.d < 1.2) rows.push(['🚆', `${tr.l.name} · ${Math.max(1, Math.round(tr.d * 1000 / 80))} min walk from the line · every ${tr.l.freq} min`]);
+  else rows.push(['🚌', 'No rail nearby — check UTA bus routes']);
+  rows.push(['🚗', `${driveMin} min drive (${fmtDist(d)})${park && park.d < 1.5 ? ` · park at ${park.p.name} (${money(park.p.price)})` : ''}`]);
+  rows.push(['🚕', `Rideshare ≈ $${Math.round(fare * 0.85)}–${Math.round(fare * 1.2)} (estimate)`]);
+  if (d < 3.5) rows.push(['🚶', `${Math.round(d / 4.8 * 60)} min walk`]);
+  return { rows, cost: tr && tr.d < 1.2 ? 2.5 : it.bus ? 2.5 : Math.round(d * 0.12 * 2), d };
+}
+
+/* Utah street grid: addresses are coordinates (800 units / mile from a city origin) */
+const GRIDS = [
+  { name:'Salt Lake grid', lat0:40.76888, lng0:-111.89100, r:40, origin:'Temple Square (Main & South Temple)' },
+  { name:'Provo grid', lat0:40.23384, lng0:-111.65853, r:14, origin:'Center St & University Ave' },
+  { name:'Logan grid', lat0:41.73549, lng0:-111.83439, r:12, origin:'Main & Center' }
+];
+const UNIT_M = 1609.344 / 800;
+function gridFor(lat, lng) { return GRIDS.find(g => km({ lat, lng }, { lat: g.lat0, lng: g.lng0 }) < g.r); }
+function gridAddr(lat, lng) {
+  const g = gridFor(lat, lng); if (!g) return null;
+  const ns = (lat - g.lat0) * 111320 / UNIT_M, ew = (lng - g.lng0) * 111320 * Math.cos(g.lat0 * Math.PI / 180) / UNIT_M;
+  const f = (v, p, n) => Math.abs(v) < 40 ? (p === 'N' ? 'Temple' : 'Main') : `${Math.round(Math.abs(v) / 10) * 10} ${v >= 0 ? p : n}`;
+  return { g, text: `${f(ns, 'N', 'S')} · ${f(ew, 'E', 'W')}` };
+}
+
+/* Elevation at a point: decode a terrarium tile pixel (works in 2D and 3D, tiny cache) */
+const elevCache = new Map();
+async function elevationAt(lng, lat) {
+  const z = 12, n = 2 ** z, latR = lat * Math.PI / 180;
+  const xt = (lng + 180) / 360 * n, yt = (1 - Math.log(Math.tan(latR) + 1 / Math.cos(latR)) / Math.PI) / 2 * n;
+  const x = Math.floor(xt), y = Math.floor(yt), key = `${x}/${y}`;
+  let ctx = elevCache.get(key);
+  if (!ctx) {
+    const img = new Image(); img.crossOrigin = 'anonymous';
+    img.src = `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${x}/${y}.png`;
+    await img.decode();
+    const c = document.createElement('canvas'); c.width = c.height = 256; ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0);
+    elevCache.set(key, ctx); if (elevCache.size > 6) elevCache.delete(elevCache.keys().next().value);
+  }
+  const [r, g, b] = ctx.getImageData(Math.floor((xt - x) * 256), Math.floor((yt - y) * 256), 1, 1).data;
+  return Math.round(r * 256 + g + b / 256 - 32768);
+}
+
+/* =========================================================================
+   7. Map
+   ========================================================================= */
+let map = null, mapReady = false;
+const added = new Set();
+const SLOT = { fill:'slot-fill', line:'slot-line', heat:'slot-heat', point:'slot-point' };
+
+function smogColor(cap) {
+  return ['interpolate', ['linear'], ['elevation'],
+    0, 'rgba(120,98,70,0.58)', Math.max(10, cap - 180), 'rgba(138,114,84,0.52)', cap - 30, 'rgba(160,140,112,0.30)', cap + 30, 'rgba(160,140,112,0)', 9000, 'rgba(0,0,0,0)'];
+}
+/* the contour closest to the estimated smog cap, drawn as "the smog line" */
+function smogLineFilter(cap) { return ['==', ['get', 'height'], Math.round(cap / 100) * 100]; }
+function buildStyle() {
+  const C = { land:'#e7e4d8', water:'#8db4c4', wood:'#bccaa7', grass:'#d3d9ba', park:'#bccca3', resid:'#ddd7c9', ind:'#d4ccbd', ice:'#f4f6f3',
+    sand:'#e8d9b8', road:'#fbf8f1', roadCase:'#cdc4b1', major:'#f3e5c6', majorCase:'#c9ad80', motor:'#d9b382', motorCase:'#a8835a', rail:'#9b9a8e',
+    label:'#283937', halo:'#f4f2ea', boundary:'#8d7f6a', building:'#d3ccbd' };
+  const dem = CONFIG.maptilerKey
+    ? { type:'raster-dem', url:`https://api.maptiler.com/tiles/terrain-rgb-v2/tiles.json?key=${CONFIG.maptilerKey}` }
+    : { type:'raster-dem', tiles:['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], encoding:'terrarium', tileSize:256, maxzoom:12,
+        attribution:'Terrain: <a href="https://registry.opendata.aws/terrain-tiles/">AWS Terrain Tiles</a>' };
+  const nameExpr = ['coalesce', ['get', 'name:en'], ['get', 'name']];
+  const w = (a, b) => ['interpolate', ['exponential', 1.6], ['zoom'], 6, a, 16, b];
+  return {
+    version: 8,
+    glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
+    sources: {
+      omt: { type:'vector', url:'https://tiles.openfreemap.org/planet' },
+      dem,
+      // Smog uses its own low-zoom DEM clipped to the Wasatch Front + Cache Valley basins (keeps memory low, avoids tinting St. George/Moab)
+      demSmog: { type:'raster-dem', tiles:['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], encoding:'terrarium', tileSize:256, maxzoom:11, bounds: [-112.22, 39.95, -111.35, 41.99] },
+      ...(CONFIG.maptilerKey ? { contours: { type:'vector', url:`https://api.maptiler.com/tiles/contours-v2/tiles.json?key=${CONFIG.maptilerKey}` } } : {})
+    },
+    layers: [
+      { id:'bg', type:'background', paint:{ 'background-color':C.land } },
+      { id:'lc-wood', type:'fill', source:'omt', 'source-layer':'landcover', filter:['==', ['get','class'], 'wood'], paint:{ 'fill-color':C.wood, 'fill-opacity':.75 } },
+      { id:'lc-grass', type:'fill', source:'omt', 'source-layer':'landcover', filter:['in', ['get','class'], ['literal', ['grass','farmland','wetland','scrub']]], paint:{ 'fill-color':C.grass, 'fill-opacity':.6 } },
+      { id:'lc-sand', type:'fill', source:'omt', 'source-layer':'landcover', filter:['in', ['get','class'], ['literal', ['sand','rock','bare_rock']]], paint:{ 'fill-color':C.sand, 'fill-opacity':.6 } },
+      { id:'lc-ice', type:'fill', source:'omt', 'source-layer':'landcover', filter:['==', ['get','class'], 'ice'], paint:{ 'fill-color':C.ice } },
+      { id:'lu-res', type:'fill', source:'omt', 'source-layer':'landuse', filter:['in', ['get','class'], ['literal', ['residential','suburb','neighbourhood']]], paint:{ 'fill-color':C.resid, 'fill-opacity':.55 } },
+      { id:'lu-ind', type:'fill', source:'omt', 'source-layer':'landuse', filter:['in', ['get','class'], ['literal', ['industrial','commercial','retail','railway']]], paint:{ 'fill-color':C.ind, 'fill-opacity':.55 } },
+      { id:'park', type:'fill', source:'omt', 'source-layer':'park', paint:{ 'fill-color':C.park, 'fill-opacity':.55 } },
+      { id:'hillshade', type:'hillshade', source:'dem', paint:{ 'hillshade-exaggeration':.55, 'hillshade-shadow-color':'#3b4c49', 'hillshade-highlight-color':'#fbfaf4', 'hillshade-accent-color':'#5b6350' } },
+      { id:'smog', type:'color-relief', source:'demSmog', paint:{ 'color-relief-color':smogColor(capHeight()), 'color-relief-opacity':1 } },
+      { id:'water', type:'fill', source:'omt', 'source-layer':'water', paint:{ 'fill-color':C.water } },
+      { id:'waterway', type:'line', source:'omt', 'source-layer':'waterway', paint:{ 'line-color':C.water, 'line-width':w(.5, 2.5) } },
+      ...(CONFIG.maptilerKey ? [
+        { id:'contour-ln', type:'line', source:'contours', 'source-layer':'contour', minzoom:10, paint:{ 'line-color':'rgba(110,84,56,.30)', 'line-width':['interpolate', ['linear'], ['zoom'], 10, .4, 15, .9] } },
+        { id:'contour-idx', type:'line', source:'contours', 'source-layer':'contour', minzoom:9, filter:['==', ['get','nth_line'], 10], paint:{ 'line-color':'rgba(107,79,58,.55)', 'line-width':['interpolate', ['linear'], ['zoom'], 9, .6, 15, 1.4] } },
+        { id:'smog-line', type:'line', source:'contours', 'source-layer':'contour', minzoom:9, filter:smogLineFilter(capHeight()), layout:{ 'line-join':'round' }, paint:{ 'line-color':'#b0714b', 'line-width':['interpolate', ['linear'], ['zoom'], 9, 1.6, 14, 3.2], 'line-opacity':.9 } }
+      ] : []),
+      { id:SLOT.fill, type:'background', layout:{ visibility:'none' } },
+      { id:'building', type:'fill', source:'omt', 'source-layer':'building', minzoom:14, paint:{ 'fill-color':C.building, 'fill-opacity':.7 } },
+      { id:'road-minor', type:'line', source:'omt', 'source-layer':'transportation', minzoom:11, filter:['in', ['get','class'], ['literal', ['minor','service','tertiary']]], layout:{ 'line-cap':'round' }, paint:{ 'line-color':C.road, 'line-width':w(.3, 7) } },
+      { id:'road-path', type:'line', source:'omt', 'source-layer':'transportation', minzoom:13, filter:['in', ['get','class'], ['literal', ['path','track']]], paint:{ 'line-color':'#a98d6a', 'line-width':1, 'line-dasharray':[2, 2] } },
+      { id:'road-major-case', type:'line', source:'omt', 'source-layer':'transportation', minzoom:8, filter:['in', ['get','class'], ['literal', ['primary','secondary','trunk']]], layout:{ 'line-cap':'round' }, paint:{ 'line-color':C.majorCase, 'line-width':w(.8, 12) } },
+      { id:'road-major', type:'line', source:'omt', 'source-layer':'transportation', minzoom:8, filter:['in', ['get','class'], ['literal', ['primary','secondary','trunk']]], layout:{ 'line-cap':'round' }, paint:{ 'line-color':C.major, 'line-width':w(.5, 10) } },
+      { id:'road-motor-case', type:'line', source:'omt', 'source-layer':'transportation', filter:['==', ['get','class'], 'motorway'], layout:{ 'line-cap':'round' }, paint:{ 'line-color':C.motorCase, 'line-width':w(1.2, 14) } },
+      { id:'road-motor', type:'line', source:'omt', 'source-layer':'transportation', filter:['==', ['get','class'], 'motorway'], layout:{ 'line-cap':'round' }, paint:{ 'line-color':C.motor, 'line-width':w(.8, 11) } },
+      { id:'rail', type:'line', source:'omt', 'source-layer':'transportation', minzoom:10, filter:['==', ['get','class'], 'rail'], paint:{ 'line-color':C.rail, 'line-width':1, 'line-dasharray':[3, 2] } },
+      { id:'boundary', type:'line', source:'omt', 'source-layer':'boundary', filter:['all', ['<=', ['get','admin_level'], 4], ['!=', ['get','maritime'], 1]], paint:{ 'line-color':C.boundary, 'line-width':1.2, 'line-dasharray':[4, 2] } },
+      { id:SLOT.line, type:'background', layout:{ visibility:'none' } },
+      { id:'road-label', type:'symbol', source:'omt', 'source-layer':'transportation_name', minzoom:13, layout:{ 'symbol-placement':'line', 'text-field':nameExpr, 'text-font':['Noto Sans Regular'], 'text-size':11 }, paint:{ 'text-color':'#56625f', 'text-halo-color':C.halo, 'text-halo-width':1.4 } },
+      { id:'peak-label', type:'symbol', source:'omt', 'source-layer':'mountain_peak', minzoom:10, layout:{ 'text-field':['concat', ['coalesce', ['get','name:en'], ['get','name'], ''], '\n', ['to-string', ['get','ele']], ' m'], 'text-font':['Noto Sans Italic'], 'text-size':10.5, 'text-offset':[0, .6], 'text-anchor':'top' }, paint:{ 'text-color':'#5b4a39', 'text-halo-color':C.halo, 'text-halo-width':1.2 } },
+      { id:'water-label', type:'symbol', source:'omt', 'source-layer':'water_name', minzoom:7, layout:{ 'text-field':nameExpr, 'text-font':['Noto Sans Italic'], 'text-size':12 }, paint:{ 'text-color':'#3c6878', 'text-halo-color':C.halo, 'text-halo-width':1 } },
+      ...(CONFIG.maptilerKey ? [
+        { id:'contour-lb', type:'symbol', source:'contours', 'source-layer':'contour', minzoom:12.5, filter:['==', ['get','nth_line'], 10], layout:{ 'symbol-placement':'line', 'text-field':['concat', ['to-string', ['get','height']], ' m'], 'text-font':['Noto Sans Regular'], 'text-size':10, 'symbol-spacing':320 }, paint:{ 'text-color':'#6b4f3a', 'text-halo-color':C.halo, 'text-halo-width':1.3 } },
+        { id:'smog-line-lb', type:'symbol', source:'contours', 'source-layer':'contour', minzoom:10, filter:smogLineFilter(capHeight()), layout:{ 'symbol-placement':'line', 'text-field':'smog line (est.)', 'text-font':['Noto Sans Bold'], 'text-size':11, 'symbol-spacing':420 }, paint:{ 'text-color':'#8a4f30', 'text-halo-color':C.halo, 'text-halo-width':1.6 } }
+      ] : []),
+      { id:'place-minor', type:'symbol', source:'omt', 'source-layer':'place', minzoom:11, filter:['in', ['get','class'], ['literal', ['village','suburb','neighbourhood','hamlet']]], layout:{ 'text-field':nameExpr, 'text-font':['Noto Sans Regular'], 'text-size':11.5 }, paint:{ 'text-color':'#4f5e5b', 'text-halo-color':C.halo, 'text-halo-width':1.4 } },
+      { id:'place-town', type:'symbol', source:'omt', 'source-layer':'place', minzoom:7.5, filter:['==', ['get','class'], 'town'], layout:{ 'text-field':nameExpr, 'text-font':['Noto Sans Regular'], 'text-size':12.5 }, paint:{ 'text-color':C.label, 'text-halo-color':C.halo, 'text-halo-width':1.5 } },
+      { id:'place-city', type:'symbol', source:'omt', 'source-layer':'place', minzoom:4, filter:['==', ['get','class'], 'city'], layout:{ 'text-field':nameExpr, 'text-font':['Noto Sans Bold'], 'text-size':['interpolate', ['linear'], ['zoom'], 5, 12, 12, 17] }, paint:{ 'text-color':C.label, 'text-halo-color':C.halo, 'text-halo-width':1.8 } },
+      { id:SLOT.heat, type:'background', layout:{ visibility:'none' } },
+      { id:SLOT.point, type:'background', layout:{ visibility:'none' } }
+    ]
+  };
+}
+
+function fc(layer) {
+  const T = tAt();
+  let items = DATA[layer] || [];
+  if (layer === 'events') items = items.filter(e => e.end >= T && (e.start - T) / 3600e3 <= 30);
+  return { type:'FeatureCollection', features: items.map(it => {
+    const props = { gid: it.gid, name: it.name, brochure: !!it.brochure, sponsored: !!it.sponsored, level: it.level || '', danger: it.danger || '', color: it.color || '' };
+    if (it.coords) return { type:'Feature', properties: props, geometry: { type:'LineString', coordinates: it.coords } };
+    if (it.ring) return { type:'Feature', properties: props, geometry: { type:'Polygon', coordinates: [it.ring] } };
+    return { type:'Feature', properties: props, geometry: { type:'Point', coordinates: [it.lng, it.lat] } };
+  }) };
+}
+
+function makeIcon(emoji, color, ring) {
+  const s = 64, c = document.createElement('canvas'); c.width = c.height = s;
+  const g = c.getContext('2d');
+  g.beginPath(); g.arc(s / 2, s / 2, 26, 0, Math.PI * 2); g.fillStyle = color; g.fill();
+  g.lineWidth = ring ? 7 : 4; g.strokeStyle = ring ? PAL.gold : '#ffffff'; g.stroke();
+  g.font = '30px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(emoji, s / 2, s / 2 + 2);
+  return g.getImageData(0, 0, s, s);
+}
+
+function addPointLayer(L) {
+  const src = 'src-' + L.id;
+  map.addSource(src, { type:'geojson', data: fc(L.id), cluster: true, clusterMaxZoom: 11, clusterRadius: 42 });
+  map.addLayer({ id:L.id + '-cl', type:'circle', source:src, filter:['has', 'point_count'],
+    paint:{ 'circle-color':L.color, 'circle-opacity':.88, 'circle-radius':['step', ['get', 'point_count'], 14, 8, 18, 25, 23], 'circle-stroke-width':2, 'circle-stroke-color':'#fff' } }, SLOT.point);
+  map.addLayer({ id:L.id + '-cnt', type:'symbol', source:src, filter:['has', 'point_count'],
+    layout:{ 'text-field':['get', 'point_count_abbreviated'], 'text-font':['Noto Sans Bold'], 'text-size':12, 'text-allow-overlap':true }, paint:{ 'text-color':'#fff' } }, SLOT.point);
+  map.addLayer({ id:L.id + '-pt', type:'symbol', source:src, filter:['!', ['has', 'point_count']],
+    layout:{ 'icon-image':['case', ['get', 'sponsored'], `pin-${L.id}-sp`, `pin-${L.id}`], 'icon-size':['interpolate', ['linear'], ['zoom'], 6, .48, 12, .62, 15, .75],
+      'icon-allow-overlap':true, 'text-field':['step', ['zoom'], '', 13, ['get', 'name']], 'text-font':['Noto Sans Regular'], 'text-size':11,
+      'text-offset':[0, 1.5], 'text-anchor':'top', 'text-optional':true },
+    paint:{ 'icon-opacity':brochureOpacity(), 'text-color':'#22302e', 'text-halo-color':'#f4f2ea', 'text-halo-width':1.4, 'text-opacity':brochureOpacity() } }, SLOT.point);
+  wireInteraction(L.id + '-pt');
+  if (wired.has(L.id + '-cl')) return; wired.add(L.id + '-cl');
+  map.on('click', L.id + '-cl', async e => {
+    const f = e.features[0];
+    try { const z = await map.getSource(src).getClusterExpansionZoom(f.properties.cluster_id); map.easeTo({ center: f.geometry.coordinates, zoom: z + .3 }); } catch {}
+  });
+  hoverCursor(L.id + '-cl');
+}
+function brochureOpacity() { return state.offBrochure ? ['case', ['get', 'brochure'], .25, 1] : 1; }
+
+function addLineLayer(L) {
+  const src = 'src-' + L.id;
+  map.addSource(src, { type:'geojson', data: fc(L.id) });
+  const color = L.id === 'transit' ? ['get', 'color'] : L.id === 'roads'
+    ? ['match', ['get', 'level'], 'bad', '#d9694a', 'warn', '#e2a23b', '#6aa868'] : PAL.bark;
+  if (L.id === 'transit') map.addLayer({ id:L.id + '-case', type:'line', source:src, layout:{ 'line-cap':'round', 'line-join':'round' }, paint:{ 'line-color':'#fff', 'line-width':['interpolate', ['linear'], ['zoom'], 8, 3, 15, 9], 'line-opacity':.8 } }, SLOT.line);
+  map.addLayer({ id:L.id + '-ln', type:'line', source:src, layout:{ 'line-cap':'round', 'line-join':'round' },
+    paint:{ 'line-color':color, 'line-width':['interpolate', ['linear'], ['zoom'], 8, L.id === 'trails' ? 1.5 : 2.2, 15, L.id === 'trails' ? 3.5 : 6],
+      ...(L.id === 'trails' ? { 'line-dasharray':[2, 1.2] } : {}) } }, SLOT.line);
+  map.addLayer({ id:L.id + '-hit', type:'line', source:src, paint:{ 'line-color':'#000', 'line-opacity':0, 'line-width':18 } }, SLOT.line);
+  wireInteraction(L.id + '-hit');
+}
+function addFillLayer(L) {
+  const src = 'src-' + L.id;
+  map.addSource(src, { type:'geojson', data: fc(L.id) });
+  const color = L.id === 'avy'
+    ? ['match', ['get', 'danger'], 'Low', '#5aa05a', 'Moderate', '#e8c547', 'Considerable', '#e8873a', 'High', '#d9483b', '#999']
+    : ['match', ['get', 'level'], 'bad', '#d9694a', 'warn', '#e2b84b', '#6fa8bf'];
+  map.addLayer({ id:L.id + '-fill', type:'fill', source:src, paint:{ 'fill-color':color, 'fill-opacity':.18 } }, SLOT.fill);
+  map.addLayer({ id:L.id + '-out', type:'line', source:src, paint:{ 'line-color':color, 'line-width':1.6, 'line-dasharray':[3, 2] } }, SLOT.fill);
+  wireInteraction(L.id + '-fill');
+}
+function addHeatLayer() {
+  map.addSource('src-crowds', { type:'geojson', data: crowdFC() });
+  map.addLayer({ id:'crowds-heat', type:'heatmap', source:'src-crowds', maxzoom:15,
+    paint:{ 'heatmap-weight':['get', 'w'], 'heatmap-intensity':['interpolate', ['linear'], ['zoom'], 6, .7, 13, 1.6],
+      'heatmap-radius':['interpolate', ['linear'], ['zoom'], 6, 14, 13, 38],
+      'heatmap-color':['interpolate', ['linear'], ['heatmap-density'], 0, 'rgba(0,0,0,0)', .2, 'rgba(111,168,191,.35)', .45, 'rgba(210,173,123,.55)', .7, 'rgba(232,135,58,.7)', 1, 'rgba(217,72,59,.85)'],
+      'heatmap-opacity':.8 } }, SLOT.heat);
+}
+function crowdFC() {
+  const T = tAt(), feats = [];
+  for (const it of Object.values(BYID)) {
+    if (it.coords || it.ring || ['wx','aq','cams','gas','rideshare','outages','wifi'].includes(it.layer)) continue;
+    const w = busy(it, T); if (w > .05) feats.push({ type:'Feature', properties:{ w }, geometry:{ type:'Point', coordinates:[it.lng, it.lat] } });
+  }
+  return { type:'FeatureCollection', features: feats };
+}
+
+/* Context choropleth: generated hex grid (demo stand-in for Census tracts / broadband polygons) */
+let HEX = null;
+function buildHex() {
+  const s = 0.022, lat0 = 40.9, cosL = Math.cos(lat0 * Math.PI / 180), dx = Math.sqrt(3) * s / cosL, dy = 1.5 * s;
+  const centers = [[40.7608,-111.891,1,.08],[40.70,-111.95,.85,.08],[40.62,-111.90,.8,.08],[40.55,-111.93,.65,.07],[40.234,-111.6585,.8,.07],[40.30,-111.70,.65,.06],
+    [40.39,-111.86,.6,.06],[41.223,-111.9738,.7,.06],[41.07,-111.97,.6,.06],[40.89,-111.88,.55,.05],[41.737,-111.834,.6,.05],[40.646,-111.498,.4,.04],[40.507,-111.413,.35,.04],[40.52,-112.30,.3,.04]];
+  const front = [[39.9,-111.60],[40.3,-111.62],[40.45,-111.74],[40.62,-111.79],[40.78,-111.80],[41.0,-111.86],[41.2,-111.90],[41.45,-111.88],[41.6,-111.80],[42,-111.78]];
+  const frontAt = la => { for (let i = 1; i < front.length; i++) if (la <= front[i][0]) { const [a, b] = [front[i - 1], front[i]]; return a[1] + (b[1] - a[1]) * (la - a[0]) / (b[0] - a[0]); } return -111.78; };
+  const unis = DATA.uni, inds = [[40.72,-112.03],[40.80,-112.02],[41.11,-112.05],[40.36,-111.79]];
+  const feats = []; let row = 0;
+  for (let la = 39.95; la < 41.98; la += dy, row++) for (let ln = -112.32 + (row % 2) * dx / 2; ln < -111.33; ln += dx) {
+    if (ln < -112.05 && la > 40.75 && la < 41.62) continue;                                   // Great Salt Lake
+    if (((la - 40.20) / .15) ** 2 + ((ln + 111.81) / .09) ** 2 < 1) continue;                 // Utah Lake
+    let u = 0; for (const [a, b, wgt, sig] of centers) u = Math.max(u, wgt * Math.exp(-(((la - a) ** 2 + ((ln - b) * cosL) ** 2) / (2 * sig * sig))));
+    const mountain = ln > frontAt(la) + .025 && u < .18;
+    const ind = inds.some(([a, b]) => Math.hypot(la - a, (ln - b) * cosL) < .03);
+    const land = mountain ? 'Mountain / forest' : ind ? 'Industrial' : u > .6 ? 'Urban core' : u > .3 ? 'Suburban' : u > .12 ? 'Exurban' : 'Rural / open';
+    const nearUni = unis.some(x => Math.hypot(la - x.lat, (ln - x.lng) * cosL) < .03);
+    const n = hash01(`${la.toFixed(3)},${ln.toFixed(3)}`);
+    const bbHit = DATA.outages.some(o => o.state !== 'Resolved' && Math.hypot(la - o.lat, (ln - o.lng) * cosL) < .035);
+    const ring = []; for (let k = 0; k < 7; k++) { const a = (60 * k + 30) * Math.PI / 180; ring.push([+(ln + s * Math.cos(a) / cosL).toFixed(5), +(la + s * Math.sin(a)).toFixed(5)]); }
+    feats.push({ type:'Feature', geometry:{ type:'Polygon', coordinates:[ring] }, properties:{
+      land, pop: Math.round(u * 5200 * (mountain ? .05 : 1) * (.85 + .3 * n)),
+      age: Math.round(nearUni ? 23 + 4 * n : 30 + 10 * (1 - u) + 5 * n),
+      bb: Math.round(bbHit ? 15 + 20 * n : (mountain ? 25 + 80 * n : 80 + 900 * u * (.8 + .4 * n))),
+      aqiF: mountain ? .25 + .15 * n : .72 + .35 * u + .1 * n } });
+  }
+  return { type:'FeatureCollection', features: feats };
+}
+function setContext(key) {
+  state.context = key;
+  if (!mapReady) return renderLayers();
+  if (key === 'none') { if (map.getLayer('hex-fill')) map.setLayoutProperty('hex-fill', 'visibility', 'none'); return renderLayers(); }
+  if (!HEX) HEX = buildHex();
+  if (!map.getSource('src-hex')) {
+    map.addSource('src-hex', { type:'geojson', data: HEX });
+    map.addLayer({ id:'hex-fill', type:'fill', source:'src-hex', paint:{ 'fill-opacity':.5, 'fill-outline-color':'rgba(255,255,255,.25)' } }, 'hillshade');
+    map.moveLayer('hex-fill', SLOT.fill);
+    if (!wired.has('hex-fill')) { wired.add('hex-fill'); map.on('click', 'hex-fill', e => { if (hitInteractive(e.point)) return; hexPopup(e); }); }
+  }
+  const C = CONTEXTS[key];
+  const expr = key === 'land' ? ['match', ['get', 'land'], ...Object.entries(LAND_COLORS).flat(), '#ccc']
+    : key === 'aqi' ? ['interpolate', ['linear'], ['*', ['get', 'aqiF'], valleyAQI()], ...C.ramp.flat()]
+    : ['interpolate', ['linear'], ['get', key], ...C.ramp.flat()];
+  map.setPaintProperty('hex-fill', 'fill-color', expr);
+  map.setLayoutProperty('hex-fill', 'visibility', 'visible');
+  renderLayers();
+}
+function hexPopup(e) {
+  const p = e.features[0].properties;
+  new maplibregl.Popup({ closeButton: true, maxWidth: '260px' }).setLngLat(e.lngLat).setHTML(
+    `<b>${esc(p.land)}</b><br>Population: ~${p.pop}/km²<br>Median age: ${p.age}<br>Broadband: ~${p.bb} Mbps<br>AQI est.: ${Math.round(p.aqiF * valleyAQI())}<br><span style="opacity:.7;font-size:11px">Demo hexes · real: Census ACS tracts & Utah Broadband areas</span>`).addTo(map);
+}
+
+/* Grid lines at street zoom */
+function updateGrid() {
+  if (!mapReady) return;
+  const show = state.layers.has('grid') && map.getZoom() >= 14;
+  const c = map.getCenter(), g = show && gridFor(c.lat, c.lng);
+  const feats = [];
+  if (g) {
+    const b = map.getBounds(), dLat = 100 * UNIT_M / 111320, dLng = 100 * UNIT_M / (111320 * Math.cos(g.lat0 * Math.PI / 180));
+    for (let i = Math.floor((b.getSouth() - g.lat0) / dLat); i <= Math.ceil((b.getNorth() - g.lat0) / dLat); i++) {
+      const la = g.lat0 + i * dLat; feats.push({ type:'Feature', properties:{ label: i === 0 ? (g.name.startsWith('Salt') ? 'South Temple' : 'Center') : `${Math.abs(i) * 100} ${i > 0 ? 'North' : 'South'}` }, geometry:{ type:'LineString', coordinates:[[b.getWest(), la], [b.getEast(), la]] } });
+    }
+    for (let j = Math.floor((b.getWest() - g.lng0) / dLng); j <= Math.ceil((b.getEast() - g.lng0) / dLng); j++) {
+      const ln = g.lng0 + j * dLng; feats.push({ type:'Feature', properties:{ label: j === 0 ? 'Main' : `${Math.abs(j) * 100} ${j > 0 ? 'East' : 'West'}` }, geometry:{ type:'LineString', coordinates:[[ln, b.getSouth()], [ln, b.getNorth()]] } });
+    }
+  }
+  const data = { type:'FeatureCollection', features: feats };
+  if (!map.getSource('src-grid')) {
+    map.addSource('src-grid', { type:'geojson', data });
+    map.addLayer({ id:'grid-ln', type:'line', source:'src-grid', paint:{ 'line-color':'#3f7f99', 'line-width':1, 'line-opacity':.45, 'line-dasharray':[4, 3] } }, SLOT.line);
+    map.addLayer({ id:'grid-lb', type:'symbol', source:'src-grid', layout:{ 'symbol-placement':'line', 'symbol-spacing':260, 'text-field':['get', 'label'], 'text-font':['Noto Sans Bold'], 'text-size':11 }, paint:{ 'text-color':'#2c5b6c', 'text-halo-color':'#f4f2ea', 'text-halo-width':1.6 } }, SLOT.point);
+  } else map.getSource('src-grid').setData(data);
+}
+
+/* Live vehicles (only runs while toggled on) */
+let vehTimer = null;
+const VEH = DATA.transit.map(l => {
+  let tot = 0; const seg = l.coords.slice(1).map((c, i) => { const d = km({ lat: l.coords[i][1], lng: l.coords[i][0] }, { lat: c[1], lng: c[0] }); tot += d; return d; });
+  return { l, seg, tot, n: l.id.startsWith('bus') ? 2 : 3 };
+});
+function along(v, frac) {
+  let target = frac * v.tot;
+  for (let i = 0; i < v.seg.length; i++) {
+    if (target <= v.seg[i]) { const a = v.l.coords[i], b = v.l.coords[i + 1], f = target / v.seg[i]; return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]; }
+    target -= v.seg[i];
+  }
+  return v.l.coords[v.l.coords.length - 1];
+}
+function vehFC() {
+  const s = Date.now() / 1000, feats = [];
+  for (const v of VEH) for (let k = 0; k < v.n; k++) {
+    let f = ((s / (v.tot * 90)) + k / v.n + hash01(v.l.id)) % 1; f = f < .5 ? f * 2 : 2 - f * 2; // ping-pong
+    feats.push({ type:'Feature', properties:{ color: v.l.color }, geometry:{ type:'Point', coordinates: along(v, f) } });
+  }
+  return { type:'FeatureCollection', features: feats };
+}
+function setVehicles(on) {
+  if (!mapReady) return;
+  if (on) {
+    if (!map.getSource('src-veh')) {
+      map.addSource('src-veh', { type:'geojson', data: vehFC() });
+      map.addLayer({ id:'veh', type:'circle', source:'src-veh', paint:{ 'circle-radius':['interpolate', ['linear'], ['zoom'], 8, 3.5, 14, 7], 'circle-color':['get', 'color'], 'circle-stroke-color':'#fff', 'circle-stroke-width':2 } }, SLOT.point);
+    }
+    map.setLayoutProperty('veh', 'visibility', 'visible');
+    clearInterval(vehTimer); vehTimer = setInterval(() => map.getSource('src-veh')?.setData(vehFC()), isMobile() ? 2000 : 1000);
+  } else { clearInterval(vehTimer); vehTimer = null; if (map.getLayer('veh')) map.setLayoutProperty('veh', 'visibility', 'none'); }
+}
+
+const layerIds = id => {
+  const L = LBYID[id];
+  return { point:[id + '-cl', id + '-cnt', id + '-pt'], line:[id + '-case', id + '-ln', id + '-hit'], fill:[id + '-fill', id + '-out'], heat:['crowds-heat'] }[L.kind] || [];
+};
+function applyLayer(id) {
+  if (!mapReady) return;
+  const on = state.layers.has(id), L = LBYID[id];
+  if (L.kind === 'special') {
+    const vis = (lid, v) => map.getLayer(lid) && map.setLayoutProperty(lid, 'visibility', v ? 'visible' : 'none');
+    if (id === 'inversion') { vis('smog', on); vis('smog-line', on && state.layers.has('contours')); vis('smog-line-lb', on && state.layers.has('contours')); }
+    if (id === 'contours') { ['contour-ln', 'contour-idx', 'contour-lb'].forEach(l => vis(l, on)); vis('smog-line', on && state.layers.has('inversion')); vis('smog-line-lb', on && state.layers.has('inversion')); }
+    if (id === 'hillshade') map.setLayoutProperty('hillshade', 'visibility', on ? 'visible' : 'none');
+    if (id === 'vehicles') setVehicles(on);
+    if (id === 'grid') updateGrid();
+    return;
+  }
+  if (on && !added.has(id)) {
+    added.add(id);
+    if (L.kind === 'point') addPointLayer(L); else if (L.kind === 'line') addLineLayer(L); else if (L.kind === 'fill') addFillLayer(L); else if (L.kind === 'heat') addHeatLayer();
+  }
+  for (const lid of layerIds(id)) if (map.getLayer(lid)) map.setLayoutProperty(lid, 'visibility', on ? 'visible' : 'none');
+}
+function setLayer(id, on) { on ? state.layers.add(id) : state.layers.delete(id); applyLayer(id); renderLayers(); }
+
+/* interaction helpers */
+const INTERACTIVE = () => LAYERS.flatMap(L => L.kind === 'point' ? [L.id + '-pt'] : L.kind === 'line' ? [L.id + '-hit'] : L.kind === 'fill' ? [L.id + '-fill'] : []).filter(id => map.getLayer(id));
+function hitInteractive(pt) { return map.queryRenderedFeatures(pt, { layers: INTERACTIVE() }).length > 0; }
+function hoverCursor(id) { map.on('mouseenter', id, () => map.getCanvas().style.cursor = 'pointer'); map.on('mouseleave', id, () => map.getCanvas().style.cursor = ''); }
+let hoverPop = null;
+const wired = new Set();
+function wireInteraction(id) {
+  if (wired.has(id)) return; wired.add(id);
+  hoverCursor(id);
+  map.on('click', id, e => {
+    if (state.pickMode) return;
+    if (id.endsWith('-fill') && map.queryRenderedFeatures(e.point, { layers: INTERACTIVE().filter(x => !x.endsWith('-fill')) }).length) return; // let points win over polygons
+    select(e.features[0].properties.gid, { fly: false });
+  });
+  if (canHover) {
+    map.on('mousemove', id, e => {
+      const it = BYID[e.features[0].properties.gid]; if (!it) return;
+      hoverPop = hoverPop || new maplibregl.Popup({ closeButton:false, closeOnClick:false, offset:14, maxWidth:'260px' });
+      hoverPop.setLngLat(e.lngLat).setHTML(`<b>${esc(it.name)}</b><br><span style="opacity:.75">${esc(oneLiner(it))}</span>`).addTo(map);
+    });
+    map.on('mouseleave', id, () => hoverPop && hoverPop.remove());
+  }
+}
+
+function setSelection(it) {
+  if (!mapReady) return;
+  const data = { type:'FeatureCollection', features: it ? [{ type:'Feature', properties:{}, geometry:{ type:'Point', coordinates:[it.lng, it.lat] } }] : [] };
+  if (!map.getSource('src-sel')) {
+    map.addSource('src-sel', { type:'geojson', data });
+    map.addLayer({ id:'sel', type:'circle', source:'src-sel', paint:{ 'circle-radius':22, 'circle-color':'rgba(111,168,191,.18)', 'circle-stroke-color':'#6fa8bf', 'circle-stroke-width':3 } }, SLOT.point);
+  } else map.getSource('src-sel').setData(data);
+}
+function drawPlanRoute() {
+  if (!mapReady) return;
+  const pts = state.plan.map(g => BYID[g]).filter(Boolean).map(x => [x.lng, x.lat]);
+  const data = { type:'FeatureCollection', features: pts.length > 1 ? [{ type:'Feature', properties:{}, geometry:{ type:'LineString', coordinates: pts } }] : [] };
+  if (!map.getSource('src-plan')) {
+    map.addSource('src-plan', { type:'geojson', data });
+    map.addLayer({ id:'plan-ln', type:'line', source:'src-plan', layout:{ 'line-cap':'round' }, paint:{ 'line-color':PAL.gold, 'line-width':3, 'line-dasharray':[1, 1.5] } }, SLOT.line);
+  } else map.getSource('src-plan').setData(data);
+}
+
+function set3D(on, animate = true) {
+  state.three = on; store.set('3d', on);
+  $('#fab3d').textContent = on ? '2D' : '3D'; $('#fab3d').classList.toggle('on', on);
+  if (!mapReady) return;
+  if (on) {
+    map.setTerrain({ source:'dem', exaggeration: 1.35 });
+    try { map.setSky({ 'sky-color':'#8fbcd0', 'horizon-color':'#e6e1d3', 'fog-color':'#d8d2c3', 'sky-horizon-blend':.5, 'horizon-fog-blend':.6, 'fog-ground-blend':.3 }); } catch {}
+    map.easeTo({ pitch: 62, duration: animate ? 900 : 0 });
+  } else {
+    map.setTerrain(null);
+    map.easeTo({ pitch: 0, bearing: 0, duration: animate ? 600 : 0 });
+  }
+}
+
+function updatePadding() {
+  if (!mapReady) return;
+  if (isMobile()) {
+    const H = innerHeight, vis = (el) => el.classList.contains('open') || el.id === 'panel' ? Math.max(0, H - (el._y ?? H)) : 0;
+    map.setPadding({ top: 120, left: 0, right: 0, bottom: Math.min(H * .6, Math.max(vis($('#panel')), vis($('#detail')))) });
+  } else {
+    map.setPadding({ top: 60, left: $('#panel').offsetWidth + 12, bottom: 0, right: $('#detail').classList.contains('open') ? $('#detail').offsetWidth + 24 : 0 });
+  }
+}
+
+function initMap() {
+  if (!window.maplibregl) { $('#maperr').style.display = 'block'; return; }
+  map = new maplibregl.Map({
+    container: 'map', style: buildStyle(), center: [CONFIG.defaultOrigin.lng, CONFIG.defaultOrigin.lat], zoom: isMobile() ? 9.6 : 10.3,
+    maxPitch: 75, pixelRatio: Math.min(window.devicePixelRatio || 1, 2), maxTileCacheSize: isMobile() ? 100 : 250,
+    attributionControl: { compact: true }, renderWorldCopies: false, maxBounds: [[-118, 34.5], [-105, 44.5]], fadeDuration: 150
+  });
+  map.addControl(new maplibregl.NavigationControl({ visualizePitch: true, showZoom: !isMobile() }), 'top-right');
+  map.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }), 'bottom-right');
+  map.on('styleimagemissing', e => {
+    const m = /^pin-(.+?)(-sp)?$/.exec(e.id); if (!m || !LBYID[m[1]]) return;
+    map.addImage(e.id, makeIcon(LBYID[m[1]].emoji, LBYID[m[1]].color, !!m[2]), { pixelRatio: 2 });
+  });
+  let fellBack = false;
+  map.on('error', e => {
+    const src = e?.sourceId || '', msg = String(e?.error?.message || '');
+    if (/omt|openfreemap/.test(src + msg)) $('#maperr').style.display = 'block';
+    // MapTiler key rejected (e.g. origin restriction on file:// or localhost) → rebuild style with keyless terrain
+    if (!fellBack && CONFIG.maptilerKey && (/^(dem|contours)$/.test(src) || /maptiler/.test(msg)) && /40[13]|Forbidden|Unauthorized|Failed to fetch/i.test(msg + ' ' + (e?.error?.status || ''))) {
+      fellBack = true; CONFIG.maptilerKey = null; console.warn('MapTiler unavailable — using keyless terrain');
+      map.setStyle(buildStyle(), { diff: false }); renderLayers();
+    }
+  });
+  // 'style.load' (not 'load') so overlays appear even while basemap tiles are slow on conference Wi-Fi
+  map.on('style.load', () => {
+    mapReady = true; added.clear();
+    for (const L of LAYERS) applyLayer(L.id);
+    set3D(state.three, false);
+    updatePadding(); updateGrid();
+    if (state.context !== 'none') setContext(state.context);
+    drawPlanRoute(); if (state.selected) setSelection(BYID[state.selected]);
+  });
+  map.on('moveend', debounce(() => { updateGrid(); if (isMobile()) statusFor(map.getCenter()); }, 120));
+  map.on('mousemove', debounce(e => { if (!isMobile()) statusFor(e.lngLat); }, 60));
+  map.on('click', async e => {
+    if (state.pickMode) return finishPick(e.lngLat);
+    if (hitInteractive(e.point)) return;
+    statusFor(e.lngLat, true);
+  });
+}
+
+/* status bar: grid address + elevation */
+let lastElev = null;
+async function statusFor(ll, withElev = false) {
+  const el = $('#status'), ga = gridAddr(ll.lat, ll.lng);
+  const zoomOK = !isMobile() || (map && map.getZoom() >= 13);
+  if (withElev) { try { lastElev = await elevationAt(ll.lng, ll.lat); } catch { lastElev = null; } }
+  const parts = [];
+  if (ga && zoomOK && state.layers.has('grid')) parts.push(`<span title="Utah addresses are coordinates from ${esc(ga.g.origin)}">📍 <b>${esc(ga.text)}</b> <span class="muted">${esc(ga.g.name)}</span></span>`);
+  if (withElev && lastElev != null) {
+    const cap = capHeight(), above = lastElev > cap;
+    parts.push(`<span>⛰ ${lastElev.toLocaleString()} m / ${ft(lastElev).toLocaleString()} ft ${state.layers.has('inversion') && ll.lat > 39.9 && ll.lat < 42 ? `<span class="tag ${above ? 'good' : 'bad'}">${above ? 'above' : 'below'} smog</span>` : ''}</span>`);
+  }
+  el.innerHTML = parts.join('<span class="muted">·</span>');
+  el.classList.toggle('hidden-m', !parts.length);
+}
+
+/* =========================================================================
+   8. UI rendering
+   ========================================================================= */
+function oneLiner(it) {
+  switch (it.layer) {
+    case 'events': return `${fmtDay(it.start)} ${fmtTime(it.start)} · ${it.venue} · ${money(it.price)}`;
+    case 'trailheads': return `${it.elev.toLocaleString()} m · ${it.diff} · ${it.km} km`;
+    case 'ski': return `${it.snow24}" new · ${it.lifts}/${it.liftsTotal} lifts · ~${it.wait} min wait`;
+    case 'aq': return `AQI ${Math.round(it.aqi * valleyAQI() / 124)} · ${aqiInfo(it.aqi)[0]}`;
+    case 'wx': return `${it.temp}°C at ${it.elev.toLocaleString()} m · ${it.cond}`;
+    case 'food': return `${it.cuisine} · ★ ${it.rating} · ~${money(it.price)}`;
+    case 'gas': return `Regular $${it.price.toFixed(2)}/gal`;
+    case 'parking': return `${money(it.price)} · ${it.spaces}`;
+    case 'roads': return it.status;
+    case 'transit': return `Every ${it.freq} min`;
+    case 'outages': return `${it.state} · ${it.since}`;
+    case 'wifi': return it.speed;
+    case 'avy': return `Avalanche danger: ${it.danger}`;
+    case 'alerts': return `Until ${it.until}`;
+    case 'uni': return `${it.events} public events this week`;
+    case 'libraries': return it.services;
+    default: return it.d ? it.d.slice(0, 70) + (it.d.length > 70 ? '…' : '') : (SOURCES[it.src]?.name || '');
+  }
+}
+
+function renderPulse() {
+  const slc = DATA.wx[0], alta = DATA.wx.find(w => w.id === 'alta'), a = valleyAQI(), [cat, cls] = aqiInfo(a);
+  $('#pulse').innerHTML = `<span>SLC <b>${slc.temp}°C</b></span><span class="muted">Alta <b style="color:var(--ink)">${alta.temp}°C</b></span><span class="tag ${cls}">AQI ${a}</span>`;
+}
+
+function renderTimeChips() {
+  const opts = [['now', 0], ['tonight', Math.max(0, Math.round((dayAt(21) - NOW) / 3600e3))], ['tomorrow', Math.round((dayAt(11, 0, 1) - NOW) / 3600e3)], ['weekend', Math.max(0, Math.round((dayAt(11, 0, SAT || 7) - NOW) / 3600e3))]];
+  $('#timeChips').innerHTML = opts.map(([k, h]) => `<button class="chip ${state.t === h ? 'on' : ''}" data-h="${h}">${t(k)}</button>`).join('');
+  const T = tAt();
+  $('#timeText').textContent = state.t === 0 ? `${t('now')} · ${fmtTime(T)}` : `${fmtDay(T)} · ${fmtTime(T)}`;
+  $('#timeHint').textContent = `smog cap ≈ ${capHeight().toLocaleString()} m`;
+}
+
+function renderToday() {
+  const items = feed(), a = valleyAQI(), cap = capHeight();
+  const personaChips = PERSONAS.map(p => `<button class="chip ${state.persona === p ? 'on' : ''}" data-persona="${p}">${t(p)}</button>`).join('');
+  $('#tab-today').innerHTML = `
+    <div class="section-title" style="margin-top:4px">${t('happening')} · ${esc($('#timeText').textContent)}</div>
+    <div class="row-wrap" style="margin-bottom:8px">${personaChips}</div>
+    <div class="toggle-row"><span>${t('beyond')}<br><span class="fine">${t('beyondHint')}</span></span><label class="switch"><input type="checkbox" id="offBrochure" ${state.offBrochure ? 'checked' : ''}><span></span></label></div>
+    <div class="toggle-row" style="padding-top:0"><span>${t('fit')} <span class="fine">(${money(remainingBudget())} left)</span></span><label class="switch"><input type="checkbox" id="fitBudget" ${state.fitBudget ? 'checked' : ''}><span></span></label></div>
+    ${a > 100 ? `<button class="card" data-open-inv style="border-color:rgba(154,133,102,.6);background:rgba(154,133,102,.12)">
+      <div class="top"><div class="emoji" style="background:rgba(154,133,102,.35)">🌫</div><div><h4>${t('escape')}</h4>
+      <div class="meta">Valley AQI ${a} · smog up to ~${cap.toLocaleString()} m. ${escapes().length} trailheads above it by bus or car.</div></div></div></button>` : ''}
+    ${items.map(({ it, reasons, when, d, over }) => `
+      <button class="card ${it.sponsored ? 'sponsored' : ''} ${over ? 'dim' : ''}" data-gid="${it.gid}">
+        <div class="top"><div class="emoji" style="background:${LBYID[it.layer].color}33">${LBYID[it.layer].emoji}</div>
+          <div style="min-width:0"><h4>${esc(it.name)}</h4><div class="meta">${esc(when)}</div>
+          <div>${it.sponsored ? '<span class="tag gold">Sponsored</span>' : ''}${reasons.map(r => `<span class="tag ${/smog|Free|Short|new snow/.test(r) ? 'good' : /outage|Busy/.test(r) ? 'bad' : ''}">${esc(r)}</span>`).join('')}${over ? '<span class="tag bad">Over budget</span>' : ''}</div></div>
+          <div class="score">${fmtDist(d)}<br>${it.price != null ? money(it.price) : ''}</div></div>
+      </button>`).join('')}
+    <p class="fine">Ranking: time-to-start, popularity, predicted crowd, distance, persona & air quality. Demo data — see Layers › ${t('sources')}.</p>`;
+}
+
+function renderLayers() {
+  const p = state.persona;
+  const personaChips = PERSONAS.map(x => `<button class="chip ${p === x ? 'on' : ''}" data-persona="${x}">${t(x)}</button>`).join('');
+  const cats = CATS.map(c => {
+    let ls = LAYERS.filter(l => l.cat === c.id && (l.id !== 'contours' || CONFIG.maptilerKey));
+    if (p) ls = [...ls].sort((a, b) => (b.personas.includes(p)) - (a.personas.includes(p)));
+    const onCount = ls.filter(l => state.layers.has(l.id)).length;
+    return `<details class="cat" data-cat="${c.id}" ${state.openCats.has(c.id) || (p && ls.some(l => l.personas.includes(p))) ? 'open' : ''}>
+      <summary>${c.emoji} ${t(c.id)}<span class="count">${onCount}/${ls.length}</span></summary>
+      ${ls.map(l => {
+        const n = DATA[l.id]?.length;
+        return `<label class="layer ${p && l.personas.includes(p) ? 'persona-hit' : ''}"><span class="sw" style="background:${l.color}40">${l.emoji}</span>
+          <span class="nm">${esc(l.name)}<small>${SOURCES[l.src]?.name || ''}${n ? ` · ${n}` : ''}${l.heavy ? ' · heavier' : ''}</small></span>
+          <span class="switch"><input type="checkbox" data-layer="${l.id}" ${state.layers.has(l.id) ? 'checked' : ''}><span></span></span></label>`;
+      }).join('')}
+      ${c.id === 'context' ? contextBlock() : ''}
+    </details>`;
+  }).join('');
+  $('#tab-layers').innerHTML = `
+    <div class="section-title" style="margin-top:4px">${t('lensFor')}</div>
+    <div class="row-wrap">${personaChips}</div>
+    ${p ? `<button class="btn small primary" id="applyPreset" style="margin-top:8px">${t('applyPreset')} (${PRESETS[p].length})</button>` : ''}
+    <div class="toggle-row" style="margin-top:8px"><span>3D terrain <span class="fine">(2D is lighter for older devices)</span></span><label class="switch"><input type="checkbox" id="t3d" ${state.three ? 'checked' : ''}><span></span></label></div>
+    ${cats}
+    <details class="cat"><summary>🔗 ${t('sources')}</summary>
+      ${Object.values(SOURCES).map(s => `<div class="fine" style="padding:3px 0">${s.url ? `<a href="${s.url}" target="_blank" rel="noopener" style="color:var(--glacier)">${esc(s.name)}</a>` : esc(s.name)} <span class="tag demo">demo</span></div>`).join('')}
+      <p class="fine">Basemap © OpenStreetMap contributors via OpenFreeMap. Terrain: AWS Terrain Tiles.</p>
+    </details>`;
+}
+function contextBlock() {
+  const C = CONTEXTS[state.context];
+  let legend = '';
+  if (state.context === 'land') legend = `<div class="row-wrap" style="margin-top:8px">${Object.entries(LAND_COLORS).map(([k, v]) => `<span class="tag"><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${v};margin-right:4px"></span>${k}</span>`).join('')}</div>`;
+  else if (C.ramp) legend = `<div class="legend">${C.ramp.map(([, c]) => `<span style="flex:1;background:${c}"></span>`).join('')}</div><div class="legend-l"><span>${C.ramp[0][0]}</span><span>${C.unit}</span><span>${C.ramp[C.ramp.length - 1][0]}+</span></div>`;
+  return `<div style="padding:6px 0 10px"><div class="fine" style="margin-bottom:6px">${t('contextMap')}</div>
+    <select class="ctl" id="contextSel">${Object.entries(CONTEXTS).map(([k, v]) => `<option value="${k}" ${state.context === k ? 'selected' : ''}>${v.name}</option>`).join('')}</select>${legend}
+    ${state.context !== 'none' ? `<p class="fine">Tap a hex for values. ${SOURCES[C.src].name} (demo hexes).</p>` : ''}</div>`;
+}
+
+function remainingBudget() { return Math.max(0, state.budget - planTotal()); }
+function planTotal() { return state.plan.map(g => BYID[g]).filter(Boolean).reduce((s, it) => s + (it.price || 0) + getThere(it).cost, 0); }
+function renderPlan() {
+  const items = state.plan.map(g => BYID[g]).filter(Boolean), total = planTotal();
+  $('#tab-plan').innerHTML = `
+    <div class="section-title" style="margin-top:4px">${t('budget')}: <b style="color:var(--ink)">$${state.budget}</b></div>
+    <input type="range" id="budget" min="0" max="400" step="10" value="${state.budget}" style="width:100%;accent-color:var(--glacier)">
+    <div class="box"><div style="display:flex;justify-content:space-between"><b>${t('total')}</b><b style="color:${total > state.budget ? 'var(--danger)' : 'var(--ok)'}">$${Math.round(total)} / $${state.budget}</b></div>
+      <div class="fine">Tickets + estimated transport (UTA fare or gas). Rideshare shown on each card.</div></div>
+    ${items.length ? items.map((it, i) => `
+      <div class="card"><div class="top"><div class="emoji" style="background:${LBYID[it.layer].color}33">${LBYID[it.layer].emoji}</div>
+        <div style="flex:1;min-width:0"><h4>${i + 1}. ${esc(it.name)}</h4><div class="meta">${esc(oneLiner(it))}</div>
+        <div class="meta">${money(it.price || 0)} + ~${money(getThere(it).cost)} transport</div></div>
+        <div style="display:flex;flex-direction:column;gap:4px"><button class="btn small" data-up="${i}" aria-label="Move up">↑</button><button class="btn small" data-rm="${i}" aria-label="Remove">✕</button></div></div></div>`).join('')
+      : `<p class="muted">${t('emptyPlan')}</p>`}
+    ${items.length ? `<div class="actions"><button class="btn" id="planFit">Fit map to plan</button><button class="btn" id="planClear">Clear</button></div>` : ''}
+    <p class="fine">Trip planning + budget. The chatbot will be able to build this list from a prompt (see YOUtah.addToPlan).</p>`;
+}
+
+function renderDetail(it) {
+  const L = LBYID[it.layer], T = tAt(), gt = getThere(it), ga = gridAddr(it.lat, it.lng), cap = capHeight();
+  const facts = [...(it.f || [])];
+  const add = (k, v) => v != null && v !== '' && facts.push([k, v]);
+  switch (it.layer) {
+    case 'events': add('When', `${fmtDay(it.start)} ${fmtTime(it.start)}–${fmtTime(it.end)}`); add('Where', it.venue); add('Price', money(it.price)); add('Type', it.cat); break;
+    case 'trailheads': add('Elevation', `${it.elev.toLocaleString()} m (${ft(it.elev).toLocaleString()} ft)`); add('Difficulty', it.diff); add('Length', `${it.km} km`);
+      if (it.canyon) { const r = DATA.roads.find(x => x.canyon === it.canyon); add('Canyon road', r ? r.status : 'Open'); } break;
+    case 'ski': add('New snow (24h)', `${it.snow24}"`); add('Base', `${it.base}"`); add('Lifts open', `${it.lifts} / ${it.liftsTotal}`); add('Est. lift wait', `${it.wait} min`); add('Day ticket', money(it.price));
+      { const av = DATA.avy.find(a => it.lat > Math.min(...a.ring.map(r => r[1])) && it.lat < Math.max(...a.ring.map(r => r[1])) && it.lng > Math.min(...a.ring.map(r => r[0])) && it.lng < Math.max(...a.ring.map(r => r[0]))); if (av) add('Backcountry avalanche danger', av.danger); }
+      if (it.canyon) { const r = DATA.roads.find(x => x.canyon === it.canyon); if (r) add('Road', r.status); } break;
+    case 'aq': { const a = Math.round(it.aqi * valleyAQI() / 124); add('AQI', `${a} — ${aqiInfo(a)[0]}`); add('PM2.5', `${Math.round(it.pm * valleyAQI() / 124)} µg/m³`); } break;
+    case 'wx': add('Temperature', `${it.temp}°C / ${Math.round(it.temp * 9 / 5 + 32)}°F`); add('Elevation', `${it.elev.toLocaleString()} m`); add('Conditions', it.cond);
+      add('Inversion?', it.elev > cap ? 'Above the smog layer — warmer & clear' : 'Inside the cold, hazy valley layer'); break;
+    case 'food': add('Cuisine', it.cuisine); add('Typical spend', money(it.price)); add('Hours', it.hours || 'See listing'); break;
+    case 'gas': add('Regular', `$${it.price.toFixed(2)}/gal`); add('Diesel', `$${(it.price + .42).toFixed(2)}/gal`); break;
+    case 'parking': add('Rate', money(it.price)); add('Availability', it.spaces); break;
+    case 'roads': add('Status', it.status); add('Cameras', 'See Traffic cameras layer'); break;
+    case 'transit': { const nxt = new Date(T); nxt.setMinutes(Math.ceil(T.getMinutes() / it.freq) * it.freq, 0, 0); add('Frequency', `Every ${it.freq} min`); add('Next departure', `~${fmtTime(nxt)} (demo)`); add('Fare', '$2.50 · free on some downtown segments'); } break;
+    case 'outages': add('Status', it.state); add('Provider', it.provider); add('Since', it.since);
+      { const w = DATA.wifi.map(x => ({ x, d: km(x, it) })).sort((a, b) => a.d - b.d)[0]; add('Nearest free Wi-Fi', `${w.x.name} (${fmtDist(w.d)})`); } break;
+    case 'wifi': add('Speed', it.speed); break;
+    case 'libraries': add('Services', it.services); break;
+    case 'uni': add('Public events this week', it.events); add('Visitor info', 'Campus maps & parking'); break;
+    case 'alerts': add('Until', it.until); break;
+    case 'avy': add('Danger', it.danger); add('Advice', it.danger === 'Low' ? 'Generally safe; watch isolated terrain' : 'Evaluate snow & terrain carefully'); break;
+    case 'community': add('Shared by', it.by); break;
+    case 'cams': add('Feed', 'Live still image every 2 min (UDOT)'); break;
+    case 'rideshare': add('Tip', 'Follow signs to the designated zone'); break;
+    default: if (it.price != null) add('Entry', money(it.price));
+  }
+  if (it.rating) add('Reviews', `★ ${it.rating} (${it.reviews.toLocaleString()})`);
+  const b = busy(it, T), bh = bestHour(it);
+  const prof = Array.from({ length: 24 }, (_, h) => { const x = new Date(T); x.setHours(h, 0, 0, 0); return busy(it, x); });
+  const isPlace = !['wx','aq','cams','alerts','avy','roads','transit','outages','rideshare','gas'].includes(it.layer);
+  const tips = it.tips || (it.layer !== 'community' && isPlace ? [`Locals' tip: ${['go before 10am on weekends', 'grab parking on a side street — it\'s free after 6pm', 'bring layers: the canyon is 10°F colder', 'ask staff for the off-menu item'][Math.floor(hash01(it.gid) * 4)]}`] : []);
+  const inPlan = state.plan.includes(it.gid);
+  $('#detailBody').innerHTML = `
+    <div class="hero"><div class="emoji" style="background:${L.color}40">${L.emoji}</div>
+      <div style="min-width:0;padding-right:36px"><div class="fine">${esc(L.name)}</div><h2>${esc(it.name)}</h2>
+      <div>${it.sponsored ? '<span class="tag gold">Sponsored</span>' : ''}${it.brochure ? '<span class="tag">Classic Utah</span>' : '<span class="tag good">Local find</span>'}
+      ${it.layer === 'trailheads' && it.basin ? `<span class="tag ${it.elev > cap ? 'good' : 'bad'}">${it.elev > cap ? `${it.elev - cap} m above smog` : 'Below smog line'}</span>` : ''}
+      ${it.layer === 'lore' ? '<span class="tag">Local lore</span>' : ''}</div></div></div>
+    ${it.d ? `<p style="margin:6px 0 4px;line-height:1.45">${esc(it.d)}</p>` : ''}
+    <dl class="facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
+    <div class="actions">
+      ${isPlace || it.layer === 'events' ? `<button class="btn ${inPlan ? '' : 'primary'}" id="dPlan">${inPlan ? '✓ In plan' : '＋ ' + t('addPlan')}</button>` : ''}
+      <a class="btn" style="text-decoration:none" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${it.lat},${it.lng}&travelmode=transit">${t('directions')}</a>
+      <button class="btn" id="dShare">${t('share')}</button>
+      ${isPlace || it.layer === 'events' ? `<button class="btn" id="dPromote" title="Businesses & organizers can boost a listing">★ ${t('promote')}</button>` : ''}
+    </div>
+    ${isPlace || it.layer === 'events' ? `<div class="box"><h4>🔮 ${t('crowd')} <span class="tag demo">ML · demo</span></h4>
+      <div class="ml-chip"><span class="pct">${Math.round(b * 100)}%</span><span class="muted">${b > .7 ? 'Busy' : b > .35 ? 'Moderate' : 'Quiet'} at ${fmtTime(T)} · ±${8 + Math.round(hash01(it.gid) * 8)}%${it.layer !== 'events' && bh ? ` · best time ~${bh.h % 12 || 12}${bh.h < 12 ? 'am' : 'pm'}` : ''}</span></div>
+      <div class="spark" aria-hidden="true">${prof.map((v, h) => `<i class="${h === T.getHours() ? 'now' : ''}" style="height:${Math.max(4, v * 100)}%"></i>`).join('')}</div>
+      <div class="fine">Features: day-of-week, hour, weather, AQI, events nearby, online buzz${it.buzz ? ` (${it.buzz} mentions this week)` : ''}. Backtested on last season (demo MAE ≈ 9 pts).</div></div>` : ''}
+    <div class="box"><h4>🧭 ${t('getThere')} <span class="fine">from ${esc(state.origin.label)}</span></h4>
+      ${gt.rows.map(([i, s]) => `<div class="go-row"><b>${i}</b><span>${esc(s)}</span></div>`).join('')}</div>
+    ${ga ? `<div class="box"><h4>📍 Address grid</h4><div><b>${esc(ga.text)}</b> <span class="muted">· ${esc(ga.g.name)}</span></div>
+      <div class="fine">Utah addresses are coordinates: “400 S 200 E” = 4 blocks south and 2 east of ${esc(ga.g.origin)}. 8 blocks ≈ 1 mile.</div></div>` : ''}
+    ${tips.length ? `<div class="box"><h4>💬 From the community</h4>${tips.map(x => `<div class="fine" style="color:var(--ink)">${esc(x)}</div>`).join('')}
+      <button class="btn small" id="dTip" style="margin-top:8px">Add a tip</button></div>` : ''}
+    <p class="fine">Source: ${SOURCES[it.src] ? (SOURCES[it.src].url ? `<a style="color:var(--glacier)" href="${SOURCES[it.src].url}" target="_blank" rel="noopener">${esc(SOURCES[it.src].name)}</a>` : esc(SOURCES[it.src].name)) : '—'} · updated ${fmtTime(NOW)} · <span class="tag demo">demo data</span></p>`;
+}
+
+function renderInversion() {
+  const cap = capHeight(), a = valleyAQI(), [cat, cls] = aqiInfo(a), ex = escapes();
+  $('#invPillText').innerHTML = `${t('escape')} <span class="tag ${cls}" style="margin-left:4px">AQI ${a}</span>`;
+  const st = [...DATA.wx].filter(w => w.lat > 40.1 && w.lat < 41.3).sort((x, y) => x.elev - y.elev);
+  const W = 300, H = 150, minE = 1200, maxE = 3400, minT = -8, maxT = 8;
+  const X = tc => 30 + (tc - minT) / (maxT - minT) * (W - 40), Y = e => H - 18 - (e - minE) / (maxE - minE) * (H - 30);
+  $('#invBody').innerHTML = `
+    <p style="margin:0 0 8px;line-height:1.45">Cold air is trapping smog in the valleys. ${state.t ? 'At the selected time' : 'Today'} the smog layer reaches about <b>${cap.toLocaleString()} m (${ft(cap).toLocaleString()} ft)</b>. Above it, the sky is clear and it's <i>warmer</i>.</p>
+    <div class="profile" aria-label="Temperature vs elevation">
+      <svg viewBox="0 0 ${W} ${H}" role="img">
+        <rect x="30" y="${Y(cap)}" width="${W - 40}" height="${H - 18 - Y(cap)}" fill="rgba(154,133,102,.35)"/>
+        <line x1="30" x2="${W - 10}" y1="${Y(cap)}" y2="${Y(cap)}" stroke="#d2ad7b" stroke-dasharray="4 3"/>
+        <text x="${W - 12}" y="${Y(cap) - 4}" fill="#d2ad7b" font-size="10" text-anchor="end">smog cap ≈ ${cap} m (estimate)</text>
+        <polyline fill="none" stroke="#6fa8bf" stroke-width="2" points="${st.map(s => `${X(s.temp)},${Y(s.elev)}`).join(' ')}"/>
+        ${st.map(s => `<circle cx="${X(s.temp)}" cy="${Y(s.elev)}" r="3" fill="#e7efe9"><title>${s.name}: ${s.temp}°C @ ${s.elev} m</title></circle>`).join('')}
+        <line x1="30" x2="30" y1="8" y2="${H - 18}" stroke="rgba(255,255,255,.3)"/><line x1="30" x2="${W - 10}" y1="${H - 18}" y2="${H - 18}" stroke="rgba(255,255,255,.3)"/>
+        <text x="4" y="14" fill="#a9bdb6" font-size="9">m</text><text x="26" y="${Y(3000) + 3}" fill="#a9bdb6" font-size="9" text-anchor="end">3k</text><text x="26" y="${Y(1500) + 3}" fill="#a9bdb6" font-size="9" text-anchor="end">1.5k</text>
+        <text x="${X(-6)}" y="${H - 5}" fill="#a9bdb6" font-size="9" text-anchor="middle">−6°C</text><text x="${X(0)}" y="${H - 5}" fill="#a9bdb6" font-size="9" text-anchor="middle">0°</text><text x="${X(6)}" y="${H - 5}" fill="#a9bdb6" font-size="9" text-anchor="middle">6°C</text>
+      </svg>
+      <div class="fine">Mountain stations get warmer with height: that's the inversion. Valley AQI ${a} (${cat}).</div>
+    </div>
+    <div class="section-title" style="margin:12px 0 4px">${ex.length} trailheads you can reach now</div>
+    ${ex.map(({ x, d, road }) => `<button class="escape" data-gid="${x.gid}"><span class="emoji" style="background:${PAL.moss}40;width:30px;height:30px;font-size:15px">🥾</span>
+      <span><b>${esc(x.name)}</b><br><span class="fine">${x.bus ? `🚌 UTA ${x.bus}` : '🚗 drive'}${road ? ` · ${esc(road.status)}` : ''}</span></span>
+      <span class="el">${x.elev.toLocaleString()} m<br>+${x.elev - cap} m · ${fmtDist(d)}</span></button>`).join('')}
+    <div class="toggle-row"><span>Show smog lid on map</span><label class="switch"><input type="checkbox" id="lidToggle" ${state.layers.has('inversion') ? 'checked' : ''}><span></span></label></div>
+    <p class="fine">Estimate from Utah DAQ ceilometer + mountain stations + USGS elevation, combined with UDOT canyon roads and UTA ski buses. Not a health or safety guarantee.</p>`;
+}
+
+function select(gid, { fly = true } = {}) {
+  const it = BYID[gid]; if (!it) return;
+  state.selected = gid; renderDetail(it);
+  $('#detail').classList.add('open'); document.body.classList.add('detail-open');
+  if (isMobile()) { detailSheet.set('half'); }
+  $('#inv').classList.add('collapsed');
+  setSelection(it); updatePadding();
+  if (fly && mapReady) map.flyTo({ center: [it.lng, it.lat], zoom: Math.max(map.getZoom(), it.coords || it.ring ? 10.5 : 13), speed: 1.4 });
+  if (hoverPop) hoverPop.remove();
+}
+function closeDetail() {
+  state.selected = null; $('#detail').classList.remove('open'); document.body.classList.remove('detail-open');
+  if (isMobile()) detailSheet.hide();
+  setSelection(null); updatePadding();
+}
+
+function renderAll() {
+  $$('[data-i18n]').forEach(el => el.textContent = t(el.dataset.i18n));
+  $$('[data-i18n-ph]').forEach(el => el.placeholder = t(el.dataset.i18nPh));
+  $$('[data-i18n-title]').forEach(el => el.title = t(el.dataset.i18nTitle));
+  document.documentElement.lang = state.lang;
+  renderTimeChips(); renderPulse(); renderToday(); renderLayers(); renderPlan(); renderInversion();
+  if (state.selected) renderDetail(BYID[state.selected]);
+}
+
+/* time changes ripple through events, smog cap, crowds, feed */
+const onTime = debounce(() => {
+  renderTimeChips(); renderToday(); renderInversion(); renderPulse();
+  if (state.selected) renderDetail(BYID[state.selected]);
+  if (!mapReady) return;
+  map.setPaintProperty('smog', 'color-relief-color', smogColor(capHeight()));
+  for (const l of ['smog-line', 'smog-line-lb']) if (map.getLayer(l)) map.setFilter(l, smogLineFilter(capHeight()));
+  if (map.getSource('src-events')) map.getSource('src-events').setData(fc('events'));
+  if (map.getSource('src-crowds')) map.getSource('src-crowds').setData(crowdFC());
+  if (state.context === 'aqi') setContext('aqi');
+}, 120);
+
+/* =========================================================================
+   9. Mobile bottom sheets
+   ========================================================================= */
+function makeSheet(el, { peek = 168, closable = false } = {}) {
+  const head = el.querySelector('.sheet-head');
+  const snaps = () => { const H = innerHeight; return { full: H * .06, half: H * .48, peek: H - peek, hidden: H + 20 }; };
+  let snap = closable ? 'hidden' : 'peek';
+  function apply() {
+    if (!isMobile()) { el.style.transform = ''; el._y = undefined; return; }
+    const y = snaps()[snap]; el._y = y; el.style.transform = `translateY(${y}px)`;
+    el.style.setProperty('--vis', `${innerHeight - y}px`); el.style.setProperty('--head', `${head.offsetHeight}px`);
+    updatePadding();
+  }
+  let sy = 0, st = 0, drag = false, moved = false;
+  head.addEventListener('pointerdown', e => { if (!isMobile() || e.target.closest('input,select')) return; drag = true; moved = false; sy = e.clientY; st = snaps()[snap]; });
+  head.addEventListener('pointermove', e => {
+    if (!drag) return; const dy = e.clientY - sy;
+    if (!moved && Math.abs(dy) > 7) { moved = true; el.style.transition = 'none'; try { head.setPointerCapture(e.pointerId); } catch {} }
+    if (moved) el.style.transform = `translateY(${Math.max(snaps().full, st + dy)}px)`;
+  });
+  const end = e => {
+    if (!drag) return; drag = false; el.style.transition = '';
+    if (moved) {
+      const y = st + (e.clientY - sy), s = snaps(), keys = closable ? ['full', 'half', 'peek', 'hidden'] : ['full', 'half', 'peek'];
+      snap = keys.sort((a, b) => Math.abs(s[a] - y) - Math.abs(s[b] - y))[0];
+      if (snap === 'hidden') { closeDetail(); return; }
+    }
+    apply();
+  };
+  head.addEventListener('pointerup', end); head.addEventListener('pointercancel', end);
+  el.querySelector('.handle').addEventListener('click', () => { if (!moved) { snap = snap === 'peek' ? 'half' : snap === 'half' ? 'full' : 'peek'; apply(); } });
+  return { set(s) { snap = s; apply(); }, hide() { snap = 'hidden'; apply(); }, apply, get snap() { return snap; } };
+}
+let panelSheet, detailSheet;
+
+/* =========================================================================
+   10. Modals: promote, suggest a spot, tips
+   ========================================================================= */
+function modal(html, onMount) { $('#modalBox').innerHTML = html; $('#modal').hidden = false; onMount && onMount($('#modalBox')); }
+function closeModal() { $('#modal').hidden = true; }
+function promoteModal(it) {
+  modal(`<h3>★ ${t('promote')}: ${esc(it.name)}</h3>
+    <p class="fine">Like sponsored pins in Google Maps: boosted listings get a gold ring on the map and a labelled spot in the Today feed.</p>
+    ${[['Boost 24 hours', 5, 'Top of Today feed nearby'], ['Featured weekend', 19, 'Gold pin + feed slot Fri–Sun'], ['Featured month', 59, 'Gold pin + newsletter + chatbot suggestions']].map(([n, p, d], i) =>
+      `<button class="tier ${i === 1 ? 'on' : ''}" data-tier="${i}"><span><b>${n}</b><br><span class="fine">${d}</span></span><b>$${p}</b></button>`).join('')}
+    <label>Business or organizer email</label><input type="email" placeholder="you@business.com">
+    <div class="actions"><button class="btn primary" id="mBuy">Boost (demo)</button><button class="btn" data-close>Cancel</button></div>
+    <p class="fine">Demo checkout — no payment is processed.</p>`, box => {
+    $$('.tier', box).forEach(b => b.onclick = () => { $$('.tier', box).forEach(x => x.classList.remove('on')); b.classList.add('on'); });
+    $('#mBuy', box).onclick = () => {
+      it.sponsored = true; closeModal(); toast('Boosted! Gold pin + feed placement (demo).');
+      if (mapReady && map.getSource('src-' + it.layer)) map.getSource('src-' + it.layer).setData(fc(it.layer));
+      renderToday(); renderDetail(it);
+    };
+  });
+}
+function startPick() {
+  state.pickMode = true; closeDetail();
+  if (isMobile()) panelSheet.set('peek');
+  const b = document.createElement('div'); b.className = 'pick-banner glass'; b.id = 'pickBanner';
+  b.innerHTML = `Tap the map to place your spot · <button class="btn small" id="pickCancel">Cancel</button>`;
+  document.body.appendChild(b); $('#pickCancel').onclick = endPick;
+  if (mapReady) map.getCanvas().style.cursor = 'crosshair';
+}
+function endPick() { state.pickMode = false; $('#pickBanner')?.remove(); if (mapReady) map.getCanvas().style.cursor = ''; }
+function finishPick(ll) {
+  endPick();
+  modal(`<h3>＋ ${t('suggest')}</h3><p class="fine">Help newcomers find the Utah locals love. Shows up as a community pin.</p>
+    <label>Name</label><input id="sName" maxlength="60" placeholder="e.g. Best fry sauce in Sugar House">
+    <label>Why should people go?</label><textarea id="sDesc" rows="3" maxlength="240"></textarea>
+    <div class="actions"><button class="btn primary" id="sSave">Add pin</button><button class="btn" data-close>Cancel</button></div>
+    <p class="fine">Saved on this device for the demo. Production: Supabase table with moderation.</p>`, box => {
+    $('#sSave', box).onclick = () => {
+      const name = $('#sName', box).value.trim() || 'Community pick';
+      const it = P('u' + Date.now().toString(36), name, ll.lat, ll.lng, { d: $('#sDesc', box).value.trim(), by: '@you', src: 'community', layer: 'community' });
+      DATA.community.push(it); indexData();
+      const mine = store.get('mine', []); mine.push({ id: it.id, name, lat: ll.lat, lng: ll.lng, d: it.d }); store.set('mine', mine);
+      if (!state.layers.has('community')) setLayer('community', true);
+      else if (mapReady && map.getSource('src-community')) map.getSource('src-community').setData(fc('community'));
+      closeModal(); select(it.gid); toast('Thanks! Your spot is on the map.');
+    };
+  });
+}
+
+/* =========================================================================
+   11. Events wiring
+   ========================================================================= */
+function wire() {
+  // cities quick-nav
+  $('#cities').innerHTML = CITIES.map(([n], i) => `<button class="chip" data-city="${i}">${esc(n)}</button>`).join('');
+  $('#cities').addEventListener('click', e => {
+    const b = e.target.closest('[data-city]'); if (!b) return;
+    const [n, lat, lng, z] = CITIES[+b.dataset.city];
+    $$('#cities .chip').forEach(c => c.classList.toggle('on', c === b));
+    if (n !== 'All of Utah') state.origin = { lat, lng, label: n };
+    if (mapReady) map.flyTo({ center: [lng, lat], zoom: z, pitch: state.three ? 60 : 0, speed: 1.3 });
+    renderToday(); renderInversion();
+  });
+  // tabs
+  $('#tabs').addEventListener('click', e => {
+    const b = e.target.closest('[data-tab]'); if (!b) return;
+    $$('#tabs button').forEach(x => x.classList.toggle('on', x === b));
+    $$('.tab').forEach(x => x.classList.toggle('on', x.id === 'tab-' + b.dataset.tab));
+    if (isMobile() && panelSheet.snap === 'peek') panelSheet.set('half');
+  });
+  // time
+  $('#timeRange').addEventListener('input', e => { state.t = +e.target.value; onTime(); });
+  $('#timeChips').addEventListener('click', e => { const b = e.target.closest('[data-h]'); if (!b) return; state.t = +b.dataset.h; $('#timeRange').value = state.t; onTime(); });
+  // panel delegation
+  $('#panel').addEventListener('click', e => {
+    const g = e.target.closest('[data-gid]'); if (g) return select(g.dataset.gid);
+    const p = e.target.closest('[data-persona]'); if (p) { state.persona = state.persona === p.dataset.persona ? null : p.dataset.persona; renderToday(); renderLayers(); return; }
+    if (e.target.closest('[data-open-inv]')) { $('#inv').classList.remove('collapsed'); if (isMobile()) panelSheet.set('peek'); return; }
+    if (e.target.id === 'applyPreset') {
+      const keep = ['inversion', 'grid', 'hillshade'];
+      for (const L of LAYERS) { const on = keep.includes(L.id) ? state.layers.has(L.id) : PRESETS[state.persona].includes(L.id); on ? state.layers.add(L.id) : state.layers.delete(L.id); applyLayer(L.id); }
+      setContext(PRESET_CONTEXT[state.persona] || 'none'); toast(`${t(state.persona)} layers on`); return;
+    }
+    const up = e.target.closest('[data-up]'); if (up) { const i = +up.dataset.up; if (i > 0) { [state.plan[i - 1], state.plan[i]] = [state.plan[i], state.plan[i - 1]]; savePlan(); } return; }
+    const rm = e.target.closest('[data-rm]'); if (rm) { state.plan.splice(+rm.dataset.rm, 1); savePlan(); return; }
+    if (e.target.id === 'planClear') { state.plan = []; savePlan(); return; }
+    if (e.target.id === 'planFit' && mapReady) { const b = new maplibregl.LngLatBounds(); state.plan.forEach(g => b.extend([BYID[g].lng, BYID[g].lat])); map.fitBounds(b, { padding: 60, maxZoom: 13 }); }
+  });
+  $('#panel').addEventListener('change', e => {
+    const el = e.target;
+    if (el.dataset.layer) return setLayer(el.dataset.layer, el.checked);
+    if (el.id === 'offBrochure') { state.offBrochure = el.checked; renderToday(); refreshBrochure(); }
+    if (el.id === 'fitBudget') { state.fitBudget = el.checked; renderToday(); }
+    if (el.id === 'contextSel') setContext(el.value);
+    if (el.id === 't3d') set3D(el.checked);
+  });
+  $('#panel').addEventListener('toggle', e => { const d = e.target; if (d.dataset && d.dataset.cat) d.open ? state.openCats.add(d.dataset.cat) : state.openCats.delete(d.dataset.cat); }, true);
+  $('#panel').addEventListener('input', e => { if (e.target.id === 'budget') { state.budget = +e.target.value; store.set('budget', state.budget); renderPlan(); renderToday(); } });
+  // detail actions
+  $('#detail').addEventListener('click', async e => {
+    const it = BYID[state.selected]; if (!it) return;
+    if (e.target.id === 'dPlan') { if (!state.plan.includes(it.gid)) { state.plan.push(it.gid); savePlan(); toast('Added to your plan'); } renderDetail(it); }
+    if (e.target.id === 'dPromote') promoteModal(it);
+    if (e.target.id === 'dTip') modal(`<h3>💬 Tip for ${esc(it.name)}</h3><label>What should a newcomer know?</label><textarea id="tipTxt" rows="3" maxlength="200"></textarea>
+      <div class="actions"><button class="btn primary" id="tipSave">Post tip</button><button class="btn" data-close>Cancel</button></div>`, box => {
+        $('#tipSave', box).onclick = () => { const v = $('#tipTxt', box).value.trim(); if (v) { it.tips = [...(it.tips || []), `@you: ${v}`]; renderDetail(it); } closeModal(); };
+      });
+    if (e.target.id === 'dShare') {
+      const url = `${location.origin}${location.pathname}#${encodeURIComponent(it.gid)}`;
+      try { if (navigator.share) await navigator.share({ title: it.name, url }); else { await navigator.clipboard.writeText(url); toast('Link copied'); } } catch {}
+    }
+  });
+  $('#detailClose').onclick = closeDetail;
+  // inversion card
+  $('#invPill').onclick = () => $('#inv').classList.toggle('collapsed');
+  $('#invBody').addEventListener('click', e => { const g = e.target.closest('[data-gid]'); if (g) { if (isMobile()) $('#inv').classList.add('collapsed'); select(g.dataset.gid); } });
+  $('#invBody').addEventListener('change', e => { if (e.target.id === 'lidToggle') setLayer('inversion', e.target.checked); });
+  // fabs
+  $('#fab3d').onclick = () => { set3D(!state.three); renderLayers(); };
+  $('#fabLocate').onclick = () => locate(true);
+  $('#fabSuggest').onclick = startPick;
+  // language
+  $('#lang').value = state.lang;
+  $('#lang').onchange = e => { state.lang = e.target.value; store.set('lang', state.lang); renderAll(); };
+  // modal
+  $('#modal').addEventListener('click', e => { if (e.target.id === 'modal' || e.target.closest('[data-close]')) closeModal(); });
+  addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); if (state.pickMode) endPick(); else if (state.selected) closeDetail(); } });
+  // search
+  const doSearch = debounce(() => {
+    const q = $('#search').value.trim().toLowerCase(), box = $('#results');
+    if (q.length < 2) { box.classList.remove('open'); return; }
+    const cities = CITIES.map((c, i) => ({ c, i })).filter(({ c }) => c[0].toLowerCase().includes(q)).slice(0, 3);
+    const hits = Object.values(BYID).map(it => {
+      const hay = `${it.name} ${it.d || ''} ${it.cuisine || ''} ${it.venue || ''} ${it.cat || ''} ${LBYID[it.layer]?.name || ''}`.toLowerCase();
+      const s = it.name.toLowerCase().startsWith(q) ? 3 : it.name.toLowerCase().includes(q) ? 2 : hay.includes(q) ? 1 : 0;
+      return { it, s };
+    }).filter(x => x.s).sort((a, b) => b.s - a.s).slice(0, 8);
+    box.innerHTML = cities.map(({ c, i }) => `<button data-city-r="${i}">🏙 <span><b>${esc(c[0])}</b><br><span class="fine">City</span></span></button>`).join('')
+      + hits.map(({ it }) => `<button data-gid="${it.gid}">${LBYID[it.layer].emoji} <span><b>${esc(it.name)}</b><br><span class="fine">${esc(LBYID[it.layer].name)} · ${esc(oneLiner(it))}</span></span></button>`).join('')
+      + `<button data-ask>💬 <span><b>Ask Utah: “${esc(q)}”</b><br><span class="fine">AI guide with web search — coming soon</span></span></button>`;
+    box.classList.add('open');
+  }, 120);
+  $('#search').addEventListener('input', doSearch);
+  $('#search').addEventListener('keydown', e => { if (e.key === 'Enter') $('#results button')?.click(); });
+  $('#results').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.gid) select(b.dataset.gid);
+    else if (b.dataset.cityR) $(`#cities [data-city="${b.dataset.cityR}"]`).click();
+    else if ('ask' in b.dataset) toast('Ask Utah (AI + web search) is coming soon');
+    $('#results').classList.remove('open'); $('#search').blur();
+  });
+  document.addEventListener('click', e => { if (!e.target.closest('#searchwrap')) $('#results').classList.remove('open'); });
+  // responsive
+  mqMobile.addEventListener('change', () => { panelSheet.apply(); state.selected ? detailSheet.set('half') : detailSheet.apply(); updatePadding(); $('#inv').classList.toggle('collapsed', isMobile()); });
+  addEventListener('resize', debounce(() => { panelSheet.apply(); if (state.selected) detailSheet.apply(); map && map.resize(); }, 150));
+}
+function savePlan() { store.set('plan', state.plan); renderPlan(); renderToday(); drawPlanRoute(); if (state.selected) renderDetail(BYID[state.selected]); }
+function refreshBrochure() {
+  if (!mapReady) return;
+  for (const L of LAYERS) if (L.kind === 'point' && map.getLayer(L.id + '-pt')) { map.setPaintProperty(L.id + '-pt', 'icon-opacity', brochureOpacity()); map.setPaintProperty(L.id + '-pt', 'text-opacity', brochureOpacity()); }
+}
+
+/* geolocation: center on user if inside Utah, else Salt Lake City */
+function locate(explicit) {
+  if (!navigator.geolocation) { if (explicit) toast('Location not available'); return; }
+  navigator.geolocation.getCurrentPosition(pos => {
+    const { latitude: lat, longitude: lng } = pos.coords, B = CONFIG.utahBounds;
+    const inUtah = lat > B.minLat && lat < B.maxLat && lng > B.minLng && lng < B.maxLng;
+    if (inUtah) { state.origin = { lat, lng, label: 'your location' }; if (mapReady) map.flyTo({ center: [lng, lat], zoom: 12.5 }); renderToday(); renderInversion(); }
+    else if (explicit) toast('You\'re outside Utah — showing Salt Lake City');
+  }, () => explicit && toast('Location permission denied — showing Salt Lake City'), { enableHighAccuracy: false, timeout: 8000, maximumAge: 600000 });
+}
+
+/* =========================================================================
+   12. Boot
+   ========================================================================= */
+(function boot() {
+  for (const m of store.get('mine', [])) DATA.community.push(P(m.id, m.name, m.lat, m.lng, { d: m.d, by: '@you', src: 'community' }));
+  indexData();
+  panelSheet = makeSheet($('#panel'), { peek: 172 });
+  detailSheet = makeSheet($('#detail'), { closable: true });
+  wire(); renderAll();
+  set3D(state.three, false);
+  if (isMobile()) $('#inv').classList.add('collapsed');
+  panelSheet.apply();
+  initMap();
+  locate(false);
+  const h = decodeURIComponent(location.hash.slice(1)); if (BYID[h]) setTimeout(() => select(h), 600);
+})();
+
+/* =========================================================================
+   13. Public API — for Claude Code hook-up and the future chatbot / RAG navigator
+   ========================================================================= */
+window.YOUtah = {
+  get map() { return map; }, state, DATA, LAYERS, SOURCES,
+  /** Replace a layer's items (same shape as DATA[layer]) — e.g. from /api/dashboard */
+  registerData(layer, items) {
+    DATA[layer] = items.map(x => ({ ...x, start: x.start ? new Date(x.start) : undefined, end: x.end ? new Date(x.end) : undefined }));
+    indexData(); if (mapReady && map.getSource('src-' + layer)) map.getSource('src-' + layer).setData(fc(layer));
+    if (layer === 'trailheads' || layer === 'aq' || layer === 'wx') HEX = null;
+    renderAll();
+  },
+  setCapHeight(m) { state.capOverride = m; onTime(); },   // feed real DAQ/ceilometer estimate here
+  select, setLayer, setContext, set3D,
+  setPersona(p) { state.persona = PERSONAS.includes(p) ? p : null; renderToday(); renderLayers(); },
+  setTime(hoursFromNow) { state.t = Math.max(0, Math.min(72, hoursFromNow)); $('#timeRange').value = state.t; onTime(); },
+  flyToCity(name) { const i = CITIES.findIndex(c => c[0].toLowerCase().includes(String(name).toLowerCase())); if (i >= 0) $(`#cities [data-city="${i}"]`).click(); },
+  addToPlan(gid) { if (BYID[gid] && !state.plan.includes(gid)) { state.plan.push(gid); savePlan(); } },
+  search(q) { q = q.toLowerCase(); return Object.values(BYID).filter(it => `${it.name} ${it.d || ''}`.toLowerCase().includes(q)).map(it => ({ gid: it.gid, name: it.name, layer: it.layer })); },
+  feed: () => feed().map(x => ({ gid: x.it.gid, name: x.it.name, reasons: x.reasons, score: Math.round(x.score) }))
+};
+</script>
+</body>
+</html>

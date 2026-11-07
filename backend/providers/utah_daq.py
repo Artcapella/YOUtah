@@ -21,6 +21,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 
 from backend.config import settings
+from backend.geo import haversine_km
 from backend.models import AirSnapshot, AirStation, AirStationReading, Coordinate
 from backend.seed_data import demo_air
 
@@ -63,13 +64,6 @@ STATIONS: tuple[AirStation, ...] = (
     _station("hc", "Hurricane", "Washington", "490530007", 37.179000, -113.305200, 990.7),
 )
 STATIONS_BY_ID = {station.id: station for station in STATIONS}
-
-
-def haversine_km(a: Coordinate, b: Coordinate) -> float:
-    d_lat = math.radians(b.lat - a.lat)
-    d_lng = math.radians(b.lng - a.lng)
-    h = math.sin(d_lat / 2) ** 2 + math.cos(math.radians(a.lat)) * math.cos(math.radians(b.lat)) * math.sin(d_lng / 2) ** 2
-    return 6371.0 * 2 * math.atan2(math.sqrt(h), math.sqrt(1 - h))
 
 
 def nearest_stations(point: Coordinate) -> list[tuple[AirStation, float]]:

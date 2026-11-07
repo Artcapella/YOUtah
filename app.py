@@ -15,7 +15,7 @@ from backend.models import Coordinate, IngestRequest
 from backend.providers.events import search_ticketmaster_events
 from backend.services.dashboard import build_dashboard, build_inversion_recommendations
 from backend.services.event_recommendations import recommend_events
-from backend.services.ingest import run_ingest
+from backend.services.ingest import ingest_all_places, run_ingest
 
 ROOT_DIR = Path(__file__).resolve().parent
 PUBLIC_DIR = ROOT_DIR / "public"
@@ -121,10 +121,21 @@ async def scheduled_ingest(authorization: str | None = Header(default=None)) -> 
 
     The DAQ feed keeps 10+ days of hourly history, so even a once-daily schedule is gap-free.
     """
+    _require_cron_secret(authorization)
+    return await run_ingest("utah-daq")
+
+
+@app.get("/api/cron/ingest-places", include_in_schema=False)
+async def scheduled_places_ingest(authorization: str | None = Header(default=None)) -> dict:
+    """Weekly Vercel Cron target: UGRC trailheads, Recreation.gov facilities and OSM POIs into `places`."""
+    _require_cron_secret(authorization)
+    return await ingest_all_places()
+
+
+def _require_cron_secret(authorization: str | None) -> None:
     token = authorization.removeprefix("Bearer ") if authorization and authorization.startswith("Bearer ") else None
     if not _secret_matches(token, settings.cron_secret):
         raise HTTPException(status_code=401, detail="Invalid cron credential")
-    return await run_ingest("utah-daq")
 
 
 def _secret_matches(provided: str | None, expected: str) -> bool:

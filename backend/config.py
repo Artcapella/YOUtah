@@ -26,9 +26,15 @@ class Settings(BaseSettings):
     eventbrite_token: str = ""
     udot_api_key: str = ""
     nps_api_key: str = ""
+    # Recreation.gov RIDB (https://ridb.recreation.gov/profile). Enables the `ridb` places ingest.
+    ridb_api_key: str = ""
+    # Google Places API (New). Server-side only; every call is billed.
+    google_maps_api_key: str = ""
     ingest_secret: str = ""
     # Vercel Cron sends `Authorization: Bearer $CRON_SECRET` to scheduled routes.
     cron_secret: str = ""
+    # Sent to every upstream (NWS, Utah DAQ, ArcGIS, Overpass, RIDB). Make it identify the
+    # app and a monitored contact: Overpass answers 406 to placeholder or generic agents.
     nws_user_agent: str = "ComprehensiveUtah/0.1 contact@example.com"
     cors_origins_raw: str = "http://localhost:8000,http://127.0.0.1:8000"
 
