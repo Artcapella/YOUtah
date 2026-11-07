@@ -50,7 +50,7 @@ app.add_middleware(
 @app.get("/", include_in_schema=False)
 async def homepage() -> FileResponse:
     """Map-first by default; the discovery dashboard remains available as a static artifact."""
-    return FileResponse(PUBLIC_DIR / "map-simple.html")
+    return FileResponse(PUBLIC_DIR / "index.html")
 
 
 @app.get("/map", include_in_schema=False)
