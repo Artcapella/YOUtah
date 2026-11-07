@@ -6,8 +6,12 @@
     <meta name="theme-color" content="#ffffff" />
     <meta name="description" content="A simple street map for finding places around Utah." />
     <title>YOUtah — Simple Map</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Aladin&family=National+Park:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.2.0/dist/maplibre-gl.css" />
     <link rel="stylesheet" href="/assets/simple-map.css" />
+    <link rel="stylesheet" href="/assets/ski-layer.css" />
   </head>
   <body>
     <main class="map-app">
@@ -16,7 +20,7 @@
       <header class="map-header">
         <a class="brand" href="/" aria-label="YOUtah home"><span class="brand-mark">⌁</span><span>YOUtah</span></a>
         <form class="search" id="search-form" role="search">
-          <label class="sr-only" for="place-search">Search Utah places</label>
+          <label class="sr-only" for="place-search">Search Utah places and ski resorts</label>
           <span class="search-icon" aria-hidden="true">⌕</span>
           <input id="place-search" type="search" autocomplete="off" placeholder="Search Utah places" />
           <button class="clear-search" id="clear-search" type="button" aria-label="Clear search" hidden>×</button>
@@ -24,7 +28,11 @@
         <nav class="view-switch" aria-label="Map view">
           <a class="active" href="/map/simple" aria-current="page">Simple</a>
           <a href="/map">Advanced</a>
+          <a href="/promoters">Promoters</a>
         </nav>
+        <button class="header-action" id="plan-launcher" type="button" aria-haspopup="dialog" aria-label="Open saved stops">
+          <span aria-hidden="true">♡</span><span>Saved</span><b id="plan-count" hidden>0</b>
+        </button>
         <button class="persona-button" id="persona-launcher" type="button" aria-haspopup="dialog" title="Personalize your Utah guide">
           <span class="persona-spark" aria-hidden="true">✦</span>
           <span>My Utah</span>
@@ -41,16 +49,29 @@
           <button class="locate-button" id="locate" type="button" title="Use my location" aria-label="Use my location">◎</button>
         </div>
 
+        <label class="ski-layer-toggle" for="ski-layer-toggle">
+          <span><span aria-hidden="true">⛷</span> Snow & skiing <small>Resorts, runs, lifts & snowfall</small></span>
+          <input id="ski-layer-toggle" type="checkbox" aria-controls="ski-layer-content" />
+        </label>
+
         <div class="category-filters" role="group" aria-label="Filter places by type">
           <button class="category active" type="button" data-category="all">All</button>
           <button class="category" type="button" data-category="outdoors">Outdoors</button>
           <button class="category" type="button" data-category="community">Community</button>
           <button class="category" type="button" data-category="food">Food</button>
           <button class="category" type="button" data-category="culture">Culture</button>
+          <button class="category" type="button" data-category="events">Events</button>
+        </div>
+
+        <div class="quick-actions" aria-label="Quick map tools">
+          <button id="today-launcher" type="button"><span aria-hidden="true">☀</span> Today</button>
+          <button id="air-launcher" type="button"><span aria-hidden="true">☁</span> Air guide</button>
+          <button id="nearby-launcher" type="button"><span aria-hidden="true">⌖</span> Nearby</button>
         </div>
 
         <p class="result-summary" id="result-summary" aria-live="polite">Loading places…</p>
         <div class="place-list" id="place-list" aria-live="polite"></div>
+        <div class="ski-layer-content" id="ski-layer-content" hidden></div>
         <p class="panel-note"><span class="live-dot"></span> Places are supplied by live and public sources.</p>
       </aside>
 
@@ -70,13 +91,13 @@
         <header class="guide-heading">
           <div>
             <p class="eyebrow">Your Utah guide</p>
-            <h2>What are you into?</h2>
+            <h2>Let’s plan something good.</h2>
           </div>
           <button class="sheet-close" id="guide-close" type="button" aria-label="Close guide">×</button>
         </header>
         <div class="guide-messages" id="guide-messages" aria-live="polite">
           <article class="guide-message assistant">
-            <p>Ask for a day plan, a trail, a free community event, or a place that matches your mood. I’ll show the sources behind every suggestion.</p>
+            <p>Hi! Tell me what a great day in Utah looks like for you. A family outing, a quiet trail, lunch on a budget? We’ll find your kind of day.</p>
           </article>
         </div>
         <form class="guide-form" id="guide-form">
@@ -86,6 +107,27 @@
           <button class="guide-send" id="guide-send" type="submit"><span>Ask</span><span aria-hidden="true">↗</span></button>
         </form>
       </section>
+
+      <dialog class="feature-dialog" id="feature-dialog" aria-labelledby="feature-title">
+        <section class="feature-sheet">
+          <header class="feature-heading">
+            <div><p class="eyebrow" id="feature-eyebrow">Explore</p><h2 id="feature-title">Today in Utah</h2></div>
+            <button class="sheet-close" id="feature-close" type="button" aria-label="Close">×</button>
+          </header>
+          <div class="feature-body" id="feature-body"></div>
+        </section>
+      </dialog>
+
+      <dialog class="welcome-dialog" id="welcome-dialog" aria-labelledby="welcome-title">
+        <section class="welcome-card">
+          <span class="welcome-mark" aria-hidden="true">⌁</span>
+          <p class="eyebrow">Welcome to YOUtah</p>
+          <h2 id="welcome-title">Find your footing, one pin at a time.</h2>
+          <p>Search for a place, choose a category, or tap a pin for details. Use <strong>Today</strong> for local conditions and events, and save spots to build a loose plan.</p>
+          <div class="welcome-steps"><span>1&nbsp; Search</span><span>2&nbsp; Explore</span><span>3&nbsp; Save</span></div>
+          <button class="save-persona" id="welcome-close" type="button">Start exploring <span aria-hidden="true">→</span></button>
+        </section>
+      </dialog>
 
       <dialog class="persona-dialog" id="persona-dialog" aria-labelledby="persona-title">
         <form class="persona-form" id="persona-form">
@@ -171,6 +213,8 @@
     </main>
 
     <script src="https://unpkg.com/maplibre-gl@5.2.0/dist/maplibre-gl.js"></script>
+    <script src="/assets/guide-renderer.js" defer></script>
+    <script src="/assets/ski-layer.js" defer></script>
     <script src="/assets/simple-map.js" defer></script>
   </body>
 </html>

@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     ticketmaster_api_key: str = ""
     eventbrite_token: str = ""
     udot_api_key: str = ""
+    # Optional Open-Meteo customer key; the public snow forecast works without a key.
+    open_meteo_api_key: str = ""
     nps_api_key: str = ""
     # Recreation.gov RIDB (https://ridb.recreation.gov/profile). Enables the `ridb` places ingest.
     ridb_api_key: str = ""

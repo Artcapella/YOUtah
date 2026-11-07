@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#123d39" />
+    <meta name="description" content="Apply to promote a Utah place or event on YOUtah." />
+    <title>Promoters · YOUtah</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Aladin&family=National+Park:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/assets/promoters.css" />
+  </head>
+  <body>
+    <header class="site-header shell">
+      <a class="brand" href="/" aria-label="YOUtah home"><span class="brand-mark">⌁</span><span>YOUtah</span></a>
+      <nav aria-label="Primary navigation"><a href="/map/simple">Explore map</a><a href="/map">Advanced map</a><a href="/inversion">Air guide</a></nav>
+    </header>
+
+    <main>
+      <section class="hero shell">
+        <div>
+          <p class="eyebrow">For local organizers</p>
+          <h1>Put your Utah<br /><em>moment</em> on the map.</h1>
+          <p class="intro">Share a place or event with people who are looking for it. Choose the visibility that fits your goal, and our team will review it for a useful, locally relevant fit.</p>
+        </div>
+        <aside class="mountain-card" aria-label="How promotion works">
+          <span class="snowcap"></span><p class="eyebrow">Thoughtful promotion</p><h2>Useful first.<br />Visible next.</h2><p>Promoted spots are clearly labeled and remain part of a guide people can trust.</p>
+        </aside>
+      </section>
+
+      <section class="shell form-layout" aria-labelledby="apply-title">
+        <div class="steps"><p class="eyebrow">How it works</p><ol><li><b>Tell us what you’re sharing.</b><span>A place, an event, or a limited-time happening.</span></li><li><b>Choose your visibility.</b><span>Set how frequently it can appear on the map and in relevant feeds.</span></li><li><b>We review the fit.</b><span>We’ll follow up before anything goes live.</span></li></ol><p class="note">Promotion never changes air quality, safety, or essential public-service information.</p></div>
+        <form id="promotion-form" class="promotion-form">
+          <div class="form-heading"><p class="eyebrow">Start a request</p><h2 id="apply-title">Promote a place or event</h2><p>Fields marked <span aria-hidden="true">*</span> are required.</p></div>
+          <div class="field-grid">
+            <label>Contact name *<input name="name" autocomplete="name" required /></label>
+            <label>Email *<input name="email" type="email" autocomplete="email" required /></label>
+            <label>Organization <input name="organization" autocomplete="organization" /></label>
+            <label>Website or event link <input name="url" type="url" placeholder="https://" /></label>
+          </div>
+          <fieldset><legend>What would you like to promote? *</legend><div class="choice-row"><label><input type="radio" name="kind" value="place" required /> A place</label><label><input type="radio" name="kind" value="event" /> An event</label></div></fieldset>
+          <div class="field-grid"><label>Place or event name *<input name="listing_name" required /></label><label>City or area *<input name="area" placeholder="e.g. Moab or Sugar House" required /></label></div>
+          <fieldset><legend>Visibility goal *</legend><p class="field-help">Your selection guides map prominence and how often an eligible recommendation feed may show your listing.</p><div class="tier-grid">
+            <label class="tier"><input type="radio" name="cadence" value="local" required /><span><b>Local lift</b><small>Extra visibility near your location</small><em>Map priority</em></span></label>
+            <label class="tier"><input type="radio" name="cadence" value="weekend" /><span><b>Weekend spotlight</b><small>Stronger visibility for timely plans</small><em>Map + feed</em></span></label>
+            <label class="tier"><input type="radio" name="cadence" value="featured" /><span><b>Featured moment</b><small>Maximum eligible reach for launches</small><em>Priority review</em></span></label>
+          </div></fieldset>
+          <label class="full-field">What makes this worth a stop? *<textarea name="details" rows="5" maxlength="1200" required placeholder="Describe the experience, dates if applicable, and who it is for."></textarea></label>
+          <label class="consent"><input type="checkbox" required /> I confirm I’m authorized to promote this listing and understand that placement is subject to review.</label>
+          <button class="submit" type="submit">Send promotion request <span aria-hidden="true">↗</span></button>
+          <p class="form-status" id="form-status" aria-live="polite"></p>
+        </form>
+      </section>
+    </main>
+    <footer class="shell footer"><span>YOUtah · A local-first guide to the Beehive State.</span><a href="/map/simple">Back to the map →</a></footer>
+    <script src="/assets/promoters.js" defer></script>
+  </body>
+</html>

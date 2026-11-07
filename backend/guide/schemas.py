@@ -38,6 +38,8 @@ class GuideAnswerRequest(GuideSearchRequest):
 
 class GuideCitation(BaseModel):
     id: str
+    # Stable prompt label: source-array filtering must never renumber [S3] as [S1].
+    label: str | None = None
     title: str
     url: str | None = None
     source_name: str

@@ -2,6 +2,15 @@ from datetime import datetime, timedelta, timezone
 
 from backend.models import Advisory, AirSnapshot, Coordinate, LocalEvent, Place, SourceHealth, WeatherSnapshot
 
+# Canonical official pages, shared with the guide's citation repair for old data.
+# Keep this independent of backend.guide's package initializer to avoid a cycle
+# through guide -> dashboard -> provider -> seed_data.
+ENSIGN_PEAK_URL = "https://www.nps.gov/places/ensign-peak-memorial-garden-and-ensign-peak-nature-park.htm"
+RED_BUTTE_URL = "https://redbuttegarden.org/plan-your-garden-visit/"
+MAIN_LIBRARY_URL = "https://services.slcpl.org/main-library"
+WHALE_URL = "https://saltlakepublicart.org/art/out-of-the-blue/"
+GRANARY_URL = "https://www.thegranarydistrict.com/"
+
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -31,20 +40,21 @@ def demo_air() -> AirSnapshot:
 def demo_places() -> list[Place]:
     created = utcnow()
     return [
-        Place(id="ensign-peak", source="UGRC", source_url="https://gis.utah.gov", name="Ensign Peak Trailhead", category="trailhead", description="A close-to-downtown climb with a skyline view and a quick local-history lesson.", coordinate=Coordinate(lat=40.7901, lng=-111.8907), elevation_m=1672, tags=["viewpoint", "sunset", "walk"], updated_at=created),
-        Place(id="red-butte", source="UGRC", source_url="https://gis.utah.gov", name="Red Butte Garden", category="park", description="Botanical garden, concerts, and a quiet foothill escape beside the University of Utah.", coordinate=Coordinate(lat=40.7659, lng=-111.8244), elevation_m=1495, tags=["garden", "music", "university"], updated_at=created),
-        Place(id="slc-library", source="Utah State Library", source_url="https://library.utah.gov", name="Salt Lake City Public Library", category="library", description="A free downtown third place with views, events, study space, and a rooftop garden.", coordinate=Coordinate(lat=40.7608, lng=-111.8911), tags=["free", "events", "workspace"], updated_at=created),
-        Place(id="whale", source="Curated", name="The Whale", category="art", description="A giant local landmark with surprisingly devoted fans in the heart of 9th & 9th.", coordinate=Coordinate(lat=40.7368, lng=-111.8632), tags=["local lore", "photo", "9th and 9th"], updated_at=created),
-        Place(id="granary-row", source="OpenStreetMap", source_url="https://www.openstreetmap.org", name="Granary Row", category="food", description="A creative corridor for food, art, music, and the changing side of Salt Lake City.", coordinate=Coordinate(lat=40.7428, lng=-111.9064), tags=["food", "art", "neighborhood"], updated_at=created),
+        Place(id="ensign-peak", source="National Park Service", source_url=ENSIGN_PEAK_URL, name="Ensign Peak Trailhead", category="trailhead", description="A popular viewpoint hike above downtown, with routes to an overlook and the summit.", coordinate=Coordinate(lat=40.7901, lng=-111.8907), elevation_m=1672, tags=["viewpoint", "hiking", "popular"], updated_at=created),
+        Place(id="red-butte", source="Red Butte Garden", source_url=RED_BUTTE_URL, name="Red Butte Garden", category="park", description="Botanical gardens and natural areas beside the University of Utah. Check the visitor page for admission and seasonal hours.", coordinate=Coordinate(lat=40.7659, lng=-111.8244), elevation_m=1495, tags=["garden", "music", "university"], updated_at=created),
+        Place(id="slc-library", source="Salt Lake City Public Library", source_url=MAIN_LIBRARY_URL, name="Salt Lake City Public Library", category="library", description="A downtown community space with books, public programs, and Library Square. Check the library's site for current access and hours.", coordinate=Coordinate(lat=40.7594, lng=-111.8848), tags=["free", "events", "workspace"], updated_at=created),
+        Place(id="whale", source="Salt Lake City Public Art Program", source_url=WHALE_URL, name="The Whale", category="art", description="Out of the Blue, the whale sculpture at 900 South and 1100 East, is a neighborhood public-art landmark.", coordinate=Coordinate(lat=40.7497, lng=-111.8598), tags=["local lore", "photo", "9th and 9th"], updated_at=created),
+        Place(id="granary-row", source="Granary District Alliance", source_url=GRANARY_URL, name="Granary District", category="community", description="A Salt Lake neighborhood with restaurants, makers, breweries, and public art. This is a district to explore, not an individual restaurant or a verified budget meal.", coordinate=Coordinate(lat=40.7428, lng=-111.9064), tags=["art", "neighborhood", "community"], updated_at=created),
     ]
 
 
 def demo_events() -> list[LocalEvent]:
+    """Clearly marked UI samples. The linked calendars do not verify these events."""
     start = utcnow()
     return [
-        LocalEvent(id="library-workshop", source="Salt Lake City Public Library", source_url="https://www.slcpl.org", title="Community creative workshop", venue="Salt Lake City Public Library", category="Community", starts_at=start + timedelta(hours=3), price_label="Free", coordinate=Coordinate(lat=40.7608, lng=-111.8911), is_free=True),
-        LocalEvent(id="campus-event", source="University of Utah Campus Connect", source_url="https://campusconnect.utah.edu/events", title="Campus community event", venue="University of Utah", category="Campus", starts_at=start + timedelta(hours=5), price_label="Free", coordinate=Coordinate(lat=40.7649, lng=-111.8421), is_free=True),
-        LocalEvent(id="local-show", source="Ticketmaster", source_url="https://www.ticketmaster.com", title="Live music tonight", venue="Downtown Salt Lake City", category="Music", starts_at=start + timedelta(hours=7), price_label="From $18", coordinate=Coordinate(lat=40.7616, lng=-111.8910), is_free=False),
+        LocalEvent(id="library-workshop", source="Demo — City Library event calendar", source_url="https://events.slcpl.org/", title="Sample: community creative workshop", venue="Salt Lake City Public Library", category="Community", starts_at=start + timedelta(hours=3), price_label="Sample only — check calendar", coordinate=Coordinate(lat=40.7594, lng=-111.8848), is_free=False),
+        LocalEvent(id="campus-event", source="Demo — University of Utah event calendar", source_url="https://campusconnect.utah.edu/events", title="Sample: campus community event", venue="University of Utah", category="Campus", starts_at=start + timedelta(hours=5), price_label="Sample only — check calendar", coordinate=Coordinate(lat=40.7649, lng=-111.8421), is_free=False),
+        LocalEvent(id="local-show", source="Demo — Visit Salt Lake event calendar", source_url="https://www.visitsaltlake.com/events/", title="Sample: local music event", venue="Salt Lake City", category="Music", starts_at=start + timedelta(hours=7), price_label="Sample only — check calendar", coordinate=Coordinate(lat=40.7616, lng=-111.8910), is_free=False),
     ]
 
 

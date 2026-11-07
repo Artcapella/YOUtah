@@ -25,6 +25,7 @@ from backend.providers.events import search_ticketmaster_events
 from backend.services.dashboard import build_dashboard, build_inversion_recommendations
 from backend.services.event_recommendations import recommend_events
 from backend.services.ingest import ingest_all_places, ingest_events, run_ingest
+from backend.ski.service import ski_conditions
 from backend.inversion import service as inversion_service, sources as inversion_sources
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -109,6 +110,12 @@ async def map_data(
     }
 
 
+@app.get("/api/ski")
+async def ski_data() -> dict:
+    """Shared snow and skiing layer. Upstream outages retain honest unavailable states."""
+    return (await ski_conditions()).model_dump(mode="json")
+
+
 @app.get("/api/guide/status")
 async def guide_health() -> dict:
     """Safe agent configuration signal; intentionally contains no credential values."""
@@ -138,6 +145,12 @@ async def escape_inversion(
 @app.get("/inversion", include_in_schema=False)
 async def inversion_page() -> FileResponse:
     return FileResponse(PUBLIC_DIR / "inversion.html")
+
+
+@app.get("/promoters", include_in_schema=False)
+async def promoters_page() -> FileResponse:
+    """Promotion inquiry form for Utah places and events."""
+    return FileResponse(PUBLIC_DIR / "promoters.html")
 
 
 @app.get("/api/inversion/today")

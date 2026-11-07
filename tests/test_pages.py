@@ -34,6 +34,13 @@ def test_vercel_rewrites_home_to_the_map_first_experience() -> None:
     assert {"source": "/", "destination": "/map-simple.html"} in config.get("rewrites", [])
 
 
+def test_promoters_page_is_served_with_a_promotion_form() -> None:
+    response = TestClient(app).get("/promoters")
+    assert response.status_code == 200
+    assert 'id="promotion-form"' in response.text
+    assert 'name="cadence"' in response.text
+
+
 def test_map_nav_link_stays_visible_on_narrow_screens() -> None:
     css = (ROOT / "public" / "assets" / "styles.css").read_text(encoding="utf-8")
     assert ".nav-links { display:none; }" not in css

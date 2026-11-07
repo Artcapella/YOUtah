@@ -6,3 +6,4 @@ python-dotenv==1.0.1
 supabase==2.33.0
 uvicorn[standard]==0.34.0
 gtfs-realtime-bindings==1.0.0
+tzdata>=2025.1
