@@ -1,0 +1,88 @@
+/* Escape the Inversion page. Builds on styles.css variables. */
+.nav-links a[aria-current="page"] { color: var(--moss); font-weight: 700; }
+.inv-header { padding: 28px 0 22px; }
+.inv-title { font-size: clamp(40px, 6vw, 68px); margin-bottom: 12px; }
+.muted { color: var(--muted); }
+.hidden { display: none !important; }
+
+.inv-controls { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-end; margin-top: 22px; }
+.segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--card); }
+.seg { border: 0; background: transparent; padding: 10px 16px; cursor: pointer; color: var(--muted); font-weight: 600; font-size: 14px; }
+.seg.active { background: var(--moss); color: #fff; }
+.inv-field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); }
+.inv-field select, .inv-field input { border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; background: var(--card); color: var(--ink); font-size: 14px; min-width: 230px; }
+.address-row { display: flex; gap: 8px; }
+.address-row input { min-width: 300px; }
+.address-row .button { border: 0; cursor: pointer; }
+
+.inv-banner { border-radius: 18px; padding: 22px 26px; color: #fff; background: var(--moss-dark); margin-bottom: 18px; transition: background .3s ease; }
+.inv-banner h2 { margin: 0 0 6px; font-size: clamp(22px, 3vw, 30px); letter-spacing: -.03em; }
+.inv-banner p { margin: 0; opacity: .92; }
+.inv-banner.good { background: linear-gradient(135deg, #1f7a52, #2f9e7a); }
+.inv-banner.warn { background: linear-gradient(135deg, #b4660a, #d99a1e); }
+.inv-banner.bad  { background: linear-gradient(135deg, #a3271c, #d4513a); }
+
+.map-frame.inv-map-frame { height: 560px; }
+#inv-map { height: 100%; width: 100%; }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; margin: 12px 0 4px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.15); }
+.dot.go { background: #14964a; } .dot.caution { background: #c87800; } .dot.skip { background: #c83232; }
+.dot.monitor { background: linear-gradient(90deg, #00b400, #e6c800, #ff7e00); width: 14px; height: 14px; } .dot.start { background: #1e5ac8; }
+.swatch.smog { display: inline-block; width: 28px; height: 10px; border-radius: 3px; background: linear-gradient(90deg, #ffff00, #ff7e00, #ff0000); opacity: .7; }
+
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 30px auto; }
+.step-card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; display: flex; flex-direction: column; gap: 4px; }
+.step-n { font-size: 12px; font-weight: 700; color: var(--moss); text-transform: uppercase; letter-spacing: .08em; }
+.step-card b { font-size: 38px; letter-spacing: -.04em; }
+.step-card small { color: var(--muted); }
+
+.picks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 36px; }
+.pick { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; }
+.pick h3 { margin: 8px 0 6px; font-size: 19px; }
+.pick p { color: var(--muted); margin: 0 0 10px; font-size: 14px; }
+.pick a { color: var(--moss); font-weight: 700; font-size: 14px; }
+.badge { display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: .08em; padding: 4px 8px; border-radius: 999px; color: #fff; }
+.badge.GO { background: #14964a; } .badge.CAUTION { background: #c87800; } .badge.SKIP { background: #c83232; }
+
+.outlook { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; align-items: end; height: 240px; margin-bottom: 40px; }
+.day { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 6px; font-size: 12px; color: var(--muted); }
+.bar { width: 100%; border-radius: 8px 8px 3px 3px; display: flex; align-items: flex-start; justify-content: center; color: #fff; font-weight: 700; font-size: 12px; padding-top: 6px; }
+.bar.Low { background: #22a05a; } .bar.Medium { background: #e0a020; } .bar.High { background: #c83232; }
+.day.trend .bar { opacity: .45; }
+.day b { color: var(--ink); font-size: 13px; }
+
+.details details { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 18px; margin-bottom: 12px; }
+.details summary { cursor: pointer; font-weight: 700; }
+.table-wrap { overflow-x: auto; margin-top: 12px; }
+#th-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+#th-table th, #th-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+#th-table a { color: var(--moss); font-weight: 700; }
+.pager { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 14px; font-size: 14px; color: var(--muted); }
+.pager .button { cursor: pointer; background: transparent; }
+.pager .button:disabled { opacity: .35; cursor: default; transform: none; }
+
+.learn { background: var(--moss-dark); color: #f3f1e8; padding: 60px 0; margin-top: 40px; }
+.learn .eyebrow { color: var(--lime); }
+.learn h2 { color: #fff; }
+.learn-grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 40px; align-items: center; line-height: 1.6; }
+.learn-grid em { color: var(--lime); font-style: normal; }
+.why-title { margin-top: 40px; }
+.why-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.why-card { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); border-radius: 16px; padding: 18px 20px; }
+.why-card h3 { color: var(--lime); margin-bottom: 8px; }
+.why-card p { margin: 0; color: #d7e3dd; line-height: 1.55; }
+.learn svg text { fill: #d7e3dd; }
+
+@media (max-width: 820px) {
+  .steps, .picks, .why-grid, .learn-grid { grid-template-columns: 1fr; }
+  .outlook { gap: 4px; }
+  .map-frame.inv-map-frame { height: 420px; }
+  .address-row input { min-width: 0; width: 100%; }
+}
+
+/* section dividers: a thin rule with a short moss accent on the left */
+.inv-block { position: relative; border-top: 1px solid var(--line); padding-top: 34px; margin-top: 34px; }
+.inv-block::before { content: ""; position: absolute; top: -2px; left: 0; width: 64px; height: 3px; border-radius: 2px; background: var(--moss); }
+.steps.inv-block { margin-bottom: 0; }
+.picks, .outlook { margin-bottom: 8px; }

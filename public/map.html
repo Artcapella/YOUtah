@@ -419,7 +419,7 @@ const DATA = {
   ],
   events: [
     P('firstfri','First Friday Art Stroll — 25th Street',41.2208,-111.9750,{...ev(18,0,0,3.5),price:0,pop:.7,cat:'Art',venue:'Historic 25th St, Ogden',src:'ticketmaster',personas:['visitor','newcomer','cheap'],d:'Galleries open late on Ogden\'s once-notorious Prohibition-era street.'}),
-    P('hockey','NHL hockey night',40.7683,-111.9011,{...ev(19,0,0,2.75),price:45,pop:.95,cat:'Sports',venue:'Delta Center',src:'ticketmaster',personas:['visitor']}),
+    P('hockey','NHL hockey night',40.7683,-111.9011,{ ...ev(19,0,0,2.75), pop:.95, cat:'Sports', venue:'Delta Center', src:'ticketmaster', ticket_url:'https://www.ticketmaster.com/', personas:['visitor'] }),
     P('improv','Late-night improv',40.7660,-111.9020,{...ev(21,30,0,1.5),price:15,pop:.55,cat:'Comedy',venue:'The Gateway',src:'ticketmaster',personas:['student','newcomer']}),
     P('mixer','International student mixer',40.7650,-111.8460,{...ev(19,0,0,3),price:0,pop:.6,cat:'Community',venue:'A. Ray Olpin Union, U of U',src:'campus',personas:['student','newcomer','cheap'],d:'Free food, language tables (中文 · Español · 한국어), and club sign-ups.'}),
     P('swing','Swing dance night',40.7235,-111.8580,{...ev(20,0,0,3),price:8,pop:.5,cat:'Dance',venue:'Sugar House',src:'ticketmaster',personas:['newcomer','student','cheap'],d:'Beginner lesson at 8, social dance after. No partner needed.'}),
@@ -649,7 +649,7 @@ const CATS = [
 ];
 const PERSONAS = ['visitor','student','newcomer','outdoors','remote','cheap'];
 const LAYERS = [
-  { id:'inversion', cat:'conditions', name:'Smog lid (inversion estimate)', emoji:'🌫', color:PAL.smog, kind:'special', on:true, personas:['outdoors','visitor','newcomer'], src:'ceil' },
+  { id:'inversion', cat:'conditions', name:'Air quality (PM2.5 · smog cut at the lid)', emoji:'🌫', color:PAL.smog, kind:'special', on:true, personas:['outdoors','visitor','newcomer'], src:'daq' },
   { id:'aq', cat:'conditions', name:'Air-quality monitors', emoji:'💨', color:PAL.smog, kind:'point', on:true, personas:['outdoors','newcomer'], src:'daq' },
   { id:'wx', cat:'conditions', name:'Weather stations', emoji:'🌡', color:PAL.glacier, kind:'point', personas:['outdoors','visitor'], src:'nws' },
   { id:'alerts', cat:'conditions', name:'Weather & air alerts', emoji:'⚠️', color:PAL.gold, kind:'fill', personas:['visitor','outdoors','newcomer'], src:'nws' },
@@ -719,7 +719,8 @@ const state = {
   t: 0, lang: store.get('lang', (navigator.language || 'en').slice(0, 2)), persona: null, offBrochure: false, fitBudget: false,
   three: store.get('3d', !lowSpec), layers: new Set(LAYERS.filter(l => l.on).map(l => l.id)), context: 'none',
   selected: null, plan: store.get('plan', []), budget: store.get('budget', 120), origin: { ...CONFIG.defaultOrigin },
-  pickMode: false, capOverride: null, openCats: new Set(['conditions', 'do'])
+  pickMode: false, capOverride: null, openCats: new Set(['conditions', 'do']),
+  aqiOverride: null, invLive: null  // live inversion hook (set by /assets/map-live-inversion.js)
 };
 if (!I18N[state.lang]) state.lang = 'en';
 const tAt = () => new Date(NOW.getTime() + state.t * 3600e3);
@@ -735,6 +736,7 @@ function capHeight(T = tAt()) {
   return Math.round(1600 + 140 * Math.sin((h - 9) / 24 * 2 * Math.PI) - 25 * days);
 }
 function valleyAQI(T = tAt()) {
+  if (state.aqiOverride != null) return state.aqiOverride; // live inversion hook
   const h = T.getHours(), days = (T - NOW) / 864e5;
   return Math.max(20, Math.round(124 + 12 * Math.sin((h - 6) / 24 * 2 * Math.PI) + 6 * days));
 }
@@ -798,7 +800,7 @@ function feed() {
   }
   if (aqi > 100) for (const { x, road } of escapes(T, 3)) {
     const r = ['Above the smog', `+${x.elev - cap} m`]; if (x.bus) r.push(`Bus ${x.bus}`);
-    push(x, 52 + (x.pop || .5) * 10, r, `${x.diff} · ${x.km} km · ${road ? road.status : 'road open'}`);
+    push(x, 52 + (x.pop || .5) * 10, r, [thBits(x), road ? road.status : 'road open'].filter(Boolean).join(' · '));
   }
   for (const s of DATA.ski) if (s.snow24 >= 4) push(s, 30 + s.snow24 * 3, [`${s.snow24}" new snow`, `${s.wait} min lift wait`], `${s.lifts}/${s.liftsTotal} lifts · ${money(s.price)}`);
   for (const f of DATA.food) if ((f.buzz || 0) > 35) { const b = busy(f, T); push(f, 22 + f.buzz / 8, ['Trending', b > .7 ? 'Busy now' : 'Short wait'], `${f.cuisine} · ★ ${f.rating}`); }
@@ -941,12 +943,13 @@ function buildStyle() {
   };
 }
 
+const thBits = it => [it.diff, it.km ? `${it.km} km` : (it.use || '')].filter(Boolean).join(' · '); // live inversion hook
 function fc(layer) {
   const T = tAt();
   let items = DATA[layer] || [];
   if (layer === 'events') items = items.filter(e => e.end >= T && (e.start - T) / 3600e3 <= 30);
   return { type:'FeatureCollection', features: items.map(it => {
-    const props = { gid: it.gid, name: it.name, brochure: !!it.brochure, sponsored: !!it.sponsored, level: it.level || '', danger: it.danger || '', color: it.color || '' };
+    const props = { gid: it.gid, name: it.name, brochure: !!it.brochure, sponsored: !!it.sponsored, level: it.level || '', danger: it.danger || '', color: it.color || '', verdict: it.verdict || '' };
     if (it.coords) return { type:'Feature', properties: props, geometry: { type:'LineString', coordinates: it.coords } };
     if (it.ring) return { type:'Feature', properties: props, geometry: { type:'Polygon', coordinates: [it.ring] } };
     return { type:'Feature', properties: props, geometry: { type:'Point', coordinates: [it.lng, it.lat] } };
@@ -975,6 +978,10 @@ function addPointLayer(L) {
       'icon-allow-overlap':true, 'text-field':['step', ['zoom'], '', 13, ['get', 'name']], 'text-font':['Noto Sans Regular'], 'text-size':11,
       'text-offset':[0, 1.5], 'text-anchor':'top', 'text-optional':true },
     paint:{ 'icon-opacity':brochureOpacity(), 'text-color':'#22302e', 'text-halo-color':'#f4f2ea', 'text-halo-width':1.4, 'text-opacity':brochureOpacity() } }, SLOT.point);
+  if (L.id === 'trailheads') map.addLayer({ id:'trailheads-verdict', type:'circle', source:src, // live inversion hook: GO / CAUTION / SKIP ring
+    filter:['all', ['!', ['has', 'point_count']], ['!=', ['get', 'verdict'], '']],
+    paint:{ 'circle-color':['match', ['get', 'verdict'], 'GO', '#14964a', 'CAUTION', '#d98a1c', '#c83232'], 'circle-opacity':.95,
+      'circle-radius':['interpolate', ['linear'], ['zoom'], 6, 11, 12, 14, 15, 17], 'circle-stroke-color':'#fff', 'circle-stroke-width':1.5 } }, L.id + '-pt');
   wireInteraction(L.id + '-pt');
   if (wired.has(L.id + '-cl')) return; wired.add(L.id + '-cl');
   map.on('click', L.id + '-cl', async e => {
@@ -1137,14 +1144,14 @@ function setVehicles(on) {
 
 const layerIds = id => {
   const L = LBYID[id];
-  return { point:[id + '-cl', id + '-cnt', id + '-pt'], line:[id + '-case', id + '-ln', id + '-hit'], fill:[id + '-fill', id + '-out'], heat:['crowds-heat'] }[L.kind] || [];
+  return { point:[id + '-cl', id + '-cnt', id + '-pt', ...(id === 'trailheads' ? ['trailheads-verdict'] : [])], line:[id + '-case', id + '-ln', id + '-hit'], fill:[id + '-fill', id + '-out'], heat:['crowds-heat'] }[L.kind] || [];
 };
 function applyLayer(id) {
   if (!mapReady) return;
   const on = state.layers.has(id), L = LBYID[id];
   if (L.kind === 'special') {
     const vis = (lid, v) => map.getLayer(lid) && map.setLayoutProperty(lid, 'visibility', v ? 'visible' : 'none');
-    if (id === 'inversion') { vis('smog', on); vis('smog-line', on && state.layers.has('contours')); vis('smog-line-lb', on && state.layers.has('contours')); }
+    if (id === 'inversion') { vis('smog', on && !state.invLive); vis('aq-surface', on); /* live inversion hook */ vis('smog-line', on && state.layers.has('contours')); vis('smog-line-lb', on && state.layers.has('contours')); }
     if (id === 'contours') { ['contour-ln', 'contour-idx', 'contour-lb'].forEach(l => vis(l, on)); vis('smog-line', on && state.layers.has('inversion')); vis('smog-line-lb', on && state.layers.has('inversion')); }
     if (id === 'hillshade') map.setLayoutProperty('hillshade', 'visibility', on ? 'visible' : 'none');
     if (id === 'vehicles') setVehicles(on);
@@ -1288,9 +1295,9 @@ async function statusFor(ll, withElev = false) {
 function oneLiner(it) {
   switch (it.layer) {
     case 'events': return `${fmtDay(it.start)} ${fmtTime(it.start)} · ${it.venue} · ${money(it.price)}`;
-    case 'trailheads': return `${it.elev.toLocaleString()} m · ${it.diff} · ${it.km} km`;
+    case 'trailheads': return [it.verdict, `${it.elev.toLocaleString()} m`, thBits(it)].filter(Boolean).join(' · ');
     case 'ski': return `${it.snow24}" new · ${it.lifts}/${it.liftsTotal} lifts · ~${it.wait} min wait`;
-    case 'aq': return `AQI ${Math.round(it.aqi * valleyAQI() / 124)} · ${aqiInfo(it.aqi)[0]}`;
+    case 'aq': { const a = it.live ? it.aqi : Math.round(it.aqi * valleyAQI() / 124); return `AQI ${a} · ${aqiInfo(a)[0]}${it.live ? ` · PM2.5 ${it.pm}` : ''}`; }
     case 'wx': return `${it.temp}°C at ${it.elev.toLocaleString()} m · ${it.cond}`;
     case 'food': return `${it.cuisine} · ★ ${it.rating} · ~${money(it.price)}`;
     case 'gas': return `Regular $${it.price.toFixed(2)}/gal`;
@@ -1308,8 +1315,8 @@ function oneLiner(it) {
 }
 
 function renderPulse() {
-  const slc = DATA.wx[0], alta = DATA.wx.find(w => w.id === 'alta'), a = valleyAQI(), [cat, cls] = aqiInfo(a);
-  $('#pulse').innerHTML = `<span>SLC <b>${slc.temp}°C</b></span><span class="muted">Alta <b style="color:var(--ink)">${alta.temp}°C</b></span><span class="tag ${cls}">AQI ${a}</span>`;
+  const slc = DATA.wx.find(w => w.id === 'kslc') || DATA.wx[0], alta = DATA.wx.find(w => w.id === 'alta'), a = valleyAQI(), [cat, cls] = aqiInfo(a); // live inversion hook: tolerate live station lists
+  $('#pulse').innerHTML = `<span>SLC <b>${slc ? slc.temp : '–'}°C</b></span><span class="muted">Alta <b style="color:var(--ink)">${alta ? alta.temp : '–'}°C</b></span><span class="tag ${cls}">AQI ${a}</span>`;
 }
 
 function renderTimeChips() {
@@ -1405,12 +1412,14 @@ function renderDetail(it) {
   const add = (k, v) => v != null && v !== '' && facts.push([k, v]);
   switch (it.layer) {
     case 'events': add('When', `${fmtDay(it.start)} ${fmtTime(it.start)}–${fmtTime(it.end)}`); add('Where', it.venue); add('Price', money(it.price)); add('Type', it.cat); break;
-    case 'trailheads': add('Elevation', `${it.elev.toLocaleString()} m (${ft(it.elev).toLocaleString()} ft)`); add('Difficulty', it.diff); add('Length', `${it.km} km`);
+    case 'trailheads': if (it.verdict) add('Clean-air verdict', `${it.verdict} — ${it.why}`); // live inversion hook
+      add('Elevation', `${it.elev.toLocaleString()} m (${ft(it.elev).toLocaleString()} ft)`); add('Difficulty', it.diff); if (it.km) add('Length', `${it.km} km`); add('Primary use', it.use);
+      if (state.invLive) add('Smog lid', state.invLive.has ? `${it.elev - cap >= 0 ? '+' : ''}${(it.elev - cap).toLocaleString()} m vs. lid (${cap.toLocaleString()} m)` : 'No lid today: valley air is mixing');
       if (it.canyon) { const r = DATA.roads.find(x => x.canyon === it.canyon); add('Canyon road', r ? r.status : 'Open'); } break;
     case 'ski': add('New snow (24h)', `${it.snow24}"`); add('Base', `${it.base}"`); add('Lifts open', `${it.lifts} / ${it.liftsTotal}`); add('Est. lift wait', `${it.wait} min`); add('Day ticket', money(it.price));
       { const av = DATA.avy.find(a => it.lat > Math.min(...a.ring.map(r => r[1])) && it.lat < Math.max(...a.ring.map(r => r[1])) && it.lng > Math.min(...a.ring.map(r => r[0])) && it.lng < Math.max(...a.ring.map(r => r[0]))); if (av) add('Backcountry avalanche danger', av.danger); }
       if (it.canyon) { const r = DATA.roads.find(x => x.canyon === it.canyon); if (r) add('Road', r.status); } break;
-    case 'aq': { const a = Math.round(it.aqi * valleyAQI() / 124); add('AQI', `${a} — ${aqiInfo(a)[0]}`); add('PM2.5', `${Math.round(it.pm * valleyAQI() / 124)} µg/m³`); } break;
+    case 'aq': { const a = it.live ? it.aqi : Math.round(it.aqi * valleyAQI() / 124); add('AQI', `${a} — ${aqiInfo(a)[0]}`); add('PM2.5', `${it.live ? it.pm : Math.round(it.pm * valleyAQI() / 124)} µg/m³`); } break;
     case 'wx': add('Temperature', `${it.temp}°C / ${Math.round(it.temp * 9 / 5 + 32)}°F`); add('Elevation', `${it.elev.toLocaleString()} m`); add('Conditions', it.cond);
       add('Inversion?', it.elev > cap ? 'Above the smog layer — warmer & clear' : 'Inside the cold, hazy valley layer'); break;
     case 'food': add('Cuisine', it.cuisine); add('Typical spend', money(it.price)); add('Hours', it.hours || 'See listing'); break;
@@ -1445,6 +1454,7 @@ function renderDetail(it) {
     ${it.d ? `<p style="margin:6px 0 4px;line-height:1.45">${esc(it.d)}</p>` : ''}
     <dl class="facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
     <div class="actions">
+      ${it.layer === 'events' && /^https?:\/\//i.test(it.ticket_url || it.source_url || it.url || '') ? `<a class="btn primary" href="${esc(it.ticket_url || it.source_url || it.url)}" target="_blank" rel="noopener noreferrer"> ↗ Visit Event Website </a>` : ''}
       ${isPlace || it.layer === 'events' ? `<button class="btn ${inPlan ? '' : 'primary'}" id="dPlan">${inPlan ? '✓ In plan' : '＋ ' + t('addPlan')}</button>` : ''}
       <a class="btn" style="text-decoration:none" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${it.lat},${it.lng}&travelmode=transit">${t('directions')}</a>
       <button class="btn" id="dShare">${t('share')}</button>
@@ -1466,30 +1476,46 @@ function renderDetail(it) {
 function renderInversion() {
   const cap = capHeight(), a = valleyAQI(), [cat, cls] = aqiInfo(a), ex = escapes();
   $('#invPillText').innerHTML = `${t('escape')} <span class="tag ${cls}" style="margin-left:4px">AQI ${a}</span>`;
-  const st = [...DATA.wx].filter(w => w.lat > 40.1 && w.lat < 41.3).sort((x, y) => x.elev - y.elev);
-  const W = 300, H = 150, minE = 1200, maxE = 3400, minT = -8, maxT = 8;
+  let st = [...DATA.wx].filter(w => w.lat > 40.1 && w.lat < 41.3).sort((x, y) => x.elev - y.elev);
+  const live = state.invLive; // live inversion hook: many live stations -> median per 100 m band
+  if (live && st.length > 12) {
+    const bins = {};
+    st.forEach(w => (bins[Math.floor(w.elev / 100)] ||= []).push(w.temp));
+    const med = a => { a = [...a].sort((x, y) => x - y); return a[a.length >> 1]; };
+    st = Object.entries(bins).map(([b, ts]) => ({ name: `${b * 100}–${b * 100 + 99} m (${ts.length} stations)`, elev: +b * 100 + 50, temp: med(ts) }));
+  }
+  const W = 300, H = 150, minE = 1200, maxE = 3400;
+  const minT = live ? Math.floor(Math.min(-2, ...st.map(s => s.temp)) - 1) : -8, maxT = live ? Math.ceil(Math.max(2, ...st.map(s => s.temp)) + 1) : 8;
   const X = tc => 30 + (tc - minT) / (maxT - minT) * (W - 40), Y = e => H - 18 - (e - minE) / (maxE - minE) * (H - 30);
   $('#invBody').innerHTML = `
-    <p style="margin:0 0 8px;line-height:1.45">Cold air is trapping smog in the valleys. ${state.t ? 'At the selected time' : 'Today'} the smog layer reaches about <b>${cap.toLocaleString()} m (${ft(cap).toLocaleString()} ft)</b>. Above it, the sky is clear and it's <i>warmer</i>.</p>
+    ${live && !live.has ? `<p style="margin:0 0 8px;line-height:1.45"><b>No inversion right now.</b> Temperature drops with height, so valley air is mixing and pollution can rise out. Valley AQI ${a} (${cat}).</p>` : ''}
+    <p style="margin:0 0 8px;line-height:1.45;${live && !live.has ? 'display:none' : ''}">Cold air is trapping smog in the valleys. ${state.t ? 'At the selected time' : 'Today'} the smog layer reaches about <b>${cap.toLocaleString()} m (${ft(cap).toLocaleString()} ft)</b>. Above it, the sky is clear and it's <i>warmer</i>.</p>
     <div class="profile" aria-label="Temperature vs elevation">
       <svg viewBox="0 0 ${W} ${H}" role="img">
+        <g style="${!live || live.has ? '' : 'display:none'}"><!-- live inversion hook: no lid line on a mixed day -->
         <rect x="30" y="${Y(cap)}" width="${W - 40}" height="${H - 18 - Y(cap)}" fill="rgba(154,133,102,.35)"/>
         <line x1="30" x2="${W - 10}" y1="${Y(cap)}" y2="${Y(cap)}" stroke="#d2ad7b" stroke-dasharray="4 3"/>
-        <text x="${W - 12}" y="${Y(cap) - 4}" fill="#d2ad7b" font-size="10" text-anchor="end">smog cap ≈ ${cap} m (estimate)</text>
-        <polyline fill="none" stroke="#6fa8bf" stroke-width="2" points="${st.map(s => `${X(s.temp)},${Y(s.elev)}`).join(' ')}"/>
-        ${st.map(s => `<circle cx="${X(s.temp)}" cy="${Y(s.elev)}" r="3" fill="#e7efe9"><title>${s.name}: ${s.temp}°C @ ${s.elev} m</title></circle>`).join('')}
+        <text x="${W - 12}" y="${Y(cap) - 4}" fill="#d2ad7b" font-size="10" text-anchor="end">smog cap ≈ ${cap} m (estimate)</text></g>
+        ${live ? '' : `<polyline fill="none" stroke="#6fa8bf" stroke-width="2" points="${st.map(s => `${X(s.temp)},${Y(s.elev)}`).join(' ')}"/>`}
+        ${st.map(s => `<circle cx="${X(s.temp)}" cy="${Y(s.elev)}" r="${live ? 3.5 : 3}" fill="${live ? '#9fd0e3' : '#e7efe9'}"><title>${s.name}: ${s.temp}°C @ ${s.elev} m</title></circle>`).join('')}
         <line x1="30" x2="30" y1="8" y2="${H - 18}" stroke="rgba(255,255,255,.3)"/><line x1="30" x2="${W - 10}" y1="${H - 18}" y2="${H - 18}" stroke="rgba(255,255,255,.3)"/>
         <text x="4" y="14" fill="#a9bdb6" font-size="9">m</text><text x="26" y="${Y(3000) + 3}" fill="#a9bdb6" font-size="9" text-anchor="end">3k</text><text x="26" y="${Y(1500) + 3}" fill="#a9bdb6" font-size="9" text-anchor="end">1.5k</text>
-        <text x="${X(-6)}" y="${H - 5}" fill="#a9bdb6" font-size="9" text-anchor="middle">−6°C</text><text x="${X(0)}" y="${H - 5}" fill="#a9bdb6" font-size="9" text-anchor="middle">0°</text><text x="${X(6)}" y="${H - 5}" fill="#a9bdb6" font-size="9" text-anchor="middle">6°C</text>
+        <text x="${X(minT + 1)}" y="${H - 5}" fill="#a9bdb6" font-size="9" text-anchor="middle">${minT + 1}°C</text><text x="${X(0)}" y="${H - 5}" fill="#a9bdb6" font-size="9" text-anchor="middle">0°</text><text x="${X(6)}" y="${H - 5}" fill="#a9bdb6" font-size="9" text-anchor="middle">6°C</text>
       </svg>
-      <div class="fine">Mountain stations get warmer with height: that's the inversion. Valley AQI ${a} (${cat}).</div>
+      <div class="fine">${!live ? `Mountain stations get warmer with height: that's the inversion. Valley AQI ${a} (${cat}).`
+        : live.has ? `Each dot = median temperature of live weather stations in a 100 m band. Air gets warmer up to ~${cap.toLocaleString()} m: that's the lid.`
+        : `Each dot = median temperature of live weather stations in a 100 m band. It gets colder as you go up, so there is no lid today.`}</div>
     </div>
+    ${live && live.picks ? `<div class="section-title" style="margin:12px 0 4px">${live.has ? `Trailheads above the smog · ${live.go} of ${live.total} nearby` : 'Air is fine everywhere · nearest trailheads'}</div>
+    ${live.picks.map(p => `<button class="escape" onclick="YOUtah.map.flyTo({center:[${p.lon},${p.lat}],zoom:13})"><span class="emoji" style="background:${p.verdict === 'GO' ? PAL.moss : '#c87800'}40;width:30px;height:30px;font-size:15px">🥾</span>
+      <span><b>${esc(p.name)}</b><br><span class="fine" style="color:${p.verdict === 'GO' ? '#7fd39a' : '#e6a74a'}">${p.verdict}</span><span class="fine"> · ${esc(p.why)}</span></span>
+      <span class="el">${p.elevation_m.toLocaleString()} m<br>${live.has ? `+${p.elevation_m - cap} m · ` : ''}${p.distance_km} km</span></button>`).join('')}` : `
     <div class="section-title" style="margin:12px 0 4px">${ex.length} trailheads you can reach now</div>
     ${ex.map(({ x, d, road }) => `<button class="escape" data-gid="${x.gid}"><span class="emoji" style="background:${PAL.moss}40;width:30px;height:30px;font-size:15px">🥾</span>
       <span><b>${esc(x.name)}</b><br><span class="fine">${x.bus ? `🚌 UTA ${x.bus}` : '🚗 drive'}${road ? ` · ${esc(road.status)}` : ''}</span></span>
-      <span class="el">${x.elev.toLocaleString()} m<br>+${x.elev - cap} m · ${fmtDist(d)}</span></button>`).join('')}
+      <span class="el">${x.elev.toLocaleString()} m<br>+${x.elev - cap} m · ${fmtDist(d)}</span></button>`).join('')}`}
     <div class="toggle-row"><span>Show smog lid on map</span><label class="switch"><input type="checkbox" id="lidToggle" ${state.layers.has('inversion') ? 'checked' : ''}><span></span></label></div>
-    <p class="fine">Estimate from Utah DAQ ceilometer + mountain stations + USGS elevation, combined with UDOT canyon roads and UTA ski buses. Not a health or safety guarantee.</p>`;
+    <p class="fine">${live ? `Live: ${esc(live.source)} · Utah DAQ air monitors${live.demo ? ' (demo day)' : ''}. ` : ''}Estimate from mountain-station temperatures + Utah DAQ + terrain elevation. Not a health or safety guarantee.</p>`;
 }
 
 function select(gid, { fly = true } = {}) {
@@ -1792,6 +1818,8 @@ window.YOUtah = {
     renderAll();
   },
   setCapHeight(m) { state.capOverride = m; onTime(); },   // feed real DAQ/ceilometer estimate here
+  setValleyAQI(a) { state.aqiOverride = a; onTime(); },   // live inversion hook
+  setInversionLive(info) { state.invLive = info; renderAll(); },   // live inversion hook
   select, setLayer, setContext, set3D,
   setPersona(p) { state.persona = PERSONAS.includes(p) ? p : null; renderToday(); renderLayers(); },
   setTime(hoursFromNow) { state.t = Math.max(0, Math.min(72, hoursFromNow)); $('#timeRange').value = state.t; onTime(); },
@@ -1801,5 +1829,6 @@ window.YOUtah = {
   feed: () => feed().map(x => ({ gid: x.it.gid, name: x.it.name, reasons: x.reasons, score: Math.round(x.score) }))
 };
 </script>
+<script src="/assets/map-live-inversion.js" defer></script>
 </body>
 </html>

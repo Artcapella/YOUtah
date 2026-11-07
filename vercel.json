@@ -3,7 +3,8 @@
   "rewrites": [
     { "source": "/", "destination": "/map-simple.html" },
     { "source": "/map/simple", "destination": "/map-simple.html" },
-    { "source": "/map", "destination": "/map.html" }
+    { "source": "/map", "destination": "/map.html" },
+    { "source": "/inversion", "destination": "/inversion.html" }
   ],
   "crons": [
     { "path": "/api/cron/ingest", "schedule": "17 10 * * *" },
