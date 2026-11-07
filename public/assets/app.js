@@ -99,11 +99,14 @@ function renderEvents(events) {
 }
 
 function renderSources(sources) {
-  document.querySelector("#source-list").innerHTML = sources.map(source => `
+  const list = document.querySelector("#source-list");
+  if (!list) return; // The static source directory on the homepage replaced the live list.
+  list.innerHTML = sources.map(source => `
     <div class="source-item"><a href="${source.href || "#"}" target="_blank" rel="noreferrer">${escapeHtml(source.label)} ↗</a><span class="source-state ${source.status}">${source.status}</span></div>`).join("");
 }
 
 function renderRecommendations(payload) {
+  if (!document.querySelector("#recommendations") || !payload?.recommendations) return;
   document.querySelector("#cap-label").textContent = `Estimated cap: ${payload.inversion_estimate_m.toLocaleString()} m`;
   document.querySelector("#inversion-summary").textContent = `Today’s estimated inversion cap is ${payload.inversion_estimate_m.toLocaleString()} m. These places rise toward clearer air while keeping access in view.`;
   document.querySelector("#recommendations").innerHTML = payload.recommendations.map(item => `
