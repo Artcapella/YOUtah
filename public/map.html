@@ -421,8 +421,7 @@ const DATA = {
   ],
   events: [
     P('firstfri','First Friday Art Stroll — 25th Street',41.2208,-111.9750,{...ev(18,0,0,3.5),price:0,pop:.7,cat:'Art',venue:'Historic 25th St, Ogden',src:'ticketmaster',personas:['visitor','newcomer','cheap'],d:'Galleries open late on Ogden\'s once-notorious Prohibition-era street.'}),
-    P('hockey','NHL hockey night',40.7683,-111.9011,{...ev(19,0,0,2.75),price:45,pop:.95,cat:'Sports',venue:'Delta Center',src:'ticketmaster',personas:['visitor']}),
-    P('improv','Late-night improv',40.7660,-111.9020,{...ev(21,30,0,1.5),price:15,pop:.55,cat:'Comedy',venue:'The Gateway',src:'ticketmaster',personas:['student','newcomer']}),
+    P('hockey','NHL hockey night',40.7683,-111.9011,{ ...ev(19,0,0,2.75), pop:.95, cat:'Sports', venue:'Delta Center', src:'ticketmaster', ticket_url:'https://www.ticketmaster.com/', personas:['visitor'] })    P('improv','Late-night improv',40.7660,-111.9020,{...ev(21,30,0,1.5),price:15,pop:.55,cat:'Comedy',venue:'The Gateway',src:'ticketmaster',personas:['student','newcomer']}),
     P('mixer','International student mixer',40.7650,-111.8460,{...ev(19,0,0,3),price:0,pop:.6,cat:'Community',venue:'A. Ray Olpin Union, U of U',src:'campus',personas:['student','newcomer','cheap'],d:'Free food, language tables (中文 · Español · 한국어), and club sign-ups.'}),
     P('swing','Swing dance night',40.7235,-111.8580,{...ev(20,0,0,3),price:8,pop:.5,cat:'Dance',venue:'Sugar House',src:'ticketmaster',personas:['newcomer','student','cheap'],d:'Beginner lesson at 8, social dance after. No partner needed.'}),
     P('velour','Indie show at Velour',40.2343,-111.6589,{...ev(20,0,0,3),price:12,pop:.6,cat:'Music',venue:'Velour Live Music Gallery, Provo',src:'ticketmaster',personas:['student'],d:'The Provo venue that launched a decade of Utah indie bands.'}),
@@ -1406,7 +1405,7 @@ function renderDetail(it) {
   const facts = [...(it.f || [])];
   const add = (k, v) => v != null && v !== '' && facts.push([k, v]);
   switch (it.layer) {
-    case 'events': add('When', `${fmtDay(it.start)} ${fmtTime(it.start)}–${fmtTime(it.end)}`); add('Where', it.venue); add('Price', money(it.price)); add('Type', it.cat); break;
+    case 'events': add('When', `${fmtDay(it.start)} ${fmtTime(it.start)}–${fmtTime(it.end)}`); add('Where', it.venue); add('Pricecase 'events': add('When', `${fmtDay(it.start)} ${fmtTime(it.start)}–${fmtTime(it.end)}`); add('Where', it.venue); add('Type', it.cat); break;', money(it.price)); add('Type', it.cat); break;
     case 'trailheads': add('Elevation', `${it.elev.toLocaleString()} m (${ft(it.elev).toLocaleString()} ft)`); add('Difficulty', it.diff); add('Length', `${it.km} km`);
       if (it.canyon) { const r = DATA.roads.find(x => x.canyon === it.canyon); add('Canyon road', r ? r.status : 'Open'); } break;
     case 'ski': add('New snow (24h)', `${it.snow24}"`); add('Base', `${it.base}"`); add('Lifts open', `${it.lifts} / ${it.liftsTotal}`); add('Est. lift wait', `${it.wait} min`); add('Day ticket', money(it.price));
@@ -1447,6 +1446,7 @@ function renderDetail(it) {
     ${it.d ? `<p style="margin:6px 0 4px;line-height:1.45">${esc(it.d)}</p>` : ''}
     <dl class="facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
     <div class="actions">
+      ${it.layer === 'events' && /^https?:\/\//i.test(it.ticket_url || it.source_url || it.url || '') ? `<a class="btn primary" href="${esc(it.ticket_url || it.source_url || it.url)}" target="_blank" rel="noopener noreferrer"> ↗ Visit Event Website </a>` : ''}
       ${isPlace || it.layer === 'events' ? `<button class="btn ${inPlan ? '' : 'primary'}" id="dPlan">${inPlan ? '✓ In plan' : '＋ ' + t('addPlan')}</button>` : ''}
       <a class="btn" style="text-decoration:none" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${it.lat},${it.lng}&travelmode=transit">${t('directions')}</a>
       <button class="btn" id="dShare">${t('share')}</button>
