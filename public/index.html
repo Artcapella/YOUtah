@@ -11,6 +11,22 @@
     <link href="https://fonts.googleapis.com/css2?family=Aladin&family=National+Park:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.2.0/dist/maplibre-gl.css" />
     <link rel="stylesheet" href="/assets/styles.css" />
+    <style>
+      .source-section { display:block; padding:56px 0; }
+      .source-section h2 { font-size:clamp(26px,3vw,38px); margin:0; }
+      .source-note { color:#61706e; font-size:13px; line-height:1.5; margin:10px 0 22px; }
+      .source-groups { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; }
+      .source-group { background:var(--card); border:1px solid #e3e2d9; border-radius:14px; padding:16px 16px 10px; }
+      .source-group h3 { margin:0 0 8px; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--moss); }
+      .source-group .source-item { display:block; padding:7px 0; border:0; font-size:13px; line-height:1.3; }
+      .source-group .source-item a { font-weight:600; }
+      .source-item small { display:block; margin-top:2px; color:#7a8886; font-size:11.5px; line-height:1.35; }
+      .source-group .source-state { margin-left:6px; font-size:10px; }
+      .source-state:empty { display:none; }
+      @media (max-width:1100px) { .source-groups { grid-template-columns:repeat(3,1fr); } }
+      @media (max-width:820px) { .source-groups { grid-template-columns:1fr 1fr; } }
+      @media (max-width:480px) { .source-groups { grid-template-columns:1fr; } }
+    </style>
   </head>
   <body>
     <main>
@@ -22,13 +38,9 @@
         <div class="nav-links">
           <a class="nav-map" href="/map/simple">Map</a>
           <a href="#discover">Discover</a>
-          <a href="#escape">Escape inversion</a>
           <a href="#events">Events</a>
-          <a href="/inversion">Inversion map</a>
-          <a href="/promoters">Promoters</a>
           <a href="#sources">Data sources</a>
         </div>
-        <label class="language"><span>Language</span><select aria-label="Language"><option>English</option><option disabled>Español — soon</option><option disabled>中文 — soon</option></select></label>
       </nav>
 
       <section class="hero shell" id="top">
@@ -37,8 +49,7 @@
           <h1>Find the Utah<br /><em>locals actually live in.</em></h1>
           <p class="hero-text">Weather, cleaner-air escapes, transit, events, community spaces, food, and the hyperlocal lore that never makes a tourism brochure.</p>
           <div class="hero-actions">
-            <a class="button primary" href="#escape">Escape the inversion <span>↗</span></a>
-            <a class="button secondary" href="/map/simple">Explore the map</a>
+            <a class="button primary" href="/map/simple">Explore the map <span>↗</span></a>
           </div>
         </div>
         <aside class="pulse-card" aria-live="polite">
@@ -69,19 +80,6 @@
         <div class="shell place-grid" id="place-grid" aria-live="polite"></div>
       </section>
 
-      <section class="inversion-section" id="escape">
-        <div class="shell inversion-layout">
-          <div class="inversion-copy">
-            <p class="eyebrow">Made for this particular valley</p>
-            <h2>Escape the inversion.</h2>
-            <p id="inversion-summary">We combine valley air quality, estimated inversion height, elevation, roads, and transit to find an easier breath of fresh air.</p>
-            <div class="inversion-scale"><span>Valley floor</span><div class="scale-line"><i></i></div><span id="cap-label">Estimated cap: --</span></div>
-            <p class="fineprint">This is a planning aid, not a safety clearance. Always check official road, weather, and trail conditions.</p>
-          </div>
-          <div class="recommendations" id="recommendations" aria-live="polite"></div>
-        </div>
-      </section>
-
       <section class="shell events-section" id="events">
         <div class="section-heading"><div><p class="eyebrow">Make a night of it</p><h2>On the calendar</h2></div><p>Public events, campus happenings, library gatherings, and ticketed shows—merged into one feed.</p></div>
         <div class="events-grid" id="events-grid" aria-live="polite"></div>
@@ -93,8 +91,37 @@
       </section>
 
       <section class="shell source-section" id="sources">
-        <div><p class="eyebrow">Trust the signal</p><h2>Every recommendation has a source.</h2></div>
-        <div class="source-list" id="source-list" aria-live="polite"></div>
+        <div>
+          <p class="eyebrow">Trust the signal</p>
+          <h2>Every recommendation has a source.</h2>
+          <p class="source-note">Live = fetched just now · Cached = our latest saved copy · Demo = sample data while a source is offline.</p>
+        </div>
+        <div class="source-groups">
+          <div class="source-group"><h3>Weather &amp; air</h3>
+            <div class="source-item" data-src="nws"><a href="https://www.weather.gov/documentation/services-web-api" target="_blank" rel="noreferrer">National Weather Service API ↗</a><span class="source-state"></span><small>Forecasts, alerts, and mountain stations for the smog lid</small></div>
+            <div class="source-item" data-src="daq"><a href="https://air.utah.gov/" target="_blank" rel="noreferrer">Utah DAQ air monitors ↗</a><span class="source-state"></span><small>Live PM2.5 and AQI across the Wasatch Front</small></div>
+            <div class="source-item"><a href="https://aqs.epa.gov/aqsweb/airdata/download_files.html" target="_blank" rel="noreferrer">EPA AQS ↗</a><span class="source-state"></span><small>Historical PM2.5 behind the outdoor-comfort estimate</small></div>
+            <div class="source-item"><a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo ↗</a><span class="source-state"></span><small>Snow and mountain forecasts for ski resorts</small></div>
+          </div>
+          <div class="source-group"><h3>Getting around</h3>
+            <div class="source-item" data-src="udot"><a href="https://udottraffic.utah.gov/" target="_blank" rel="noreferrer">UDOT Traffic API ↗</a><span class="source-state"></span><small>Road conditions, closures, canyon roads</small></div>
+            <div class="source-item" data-src="uta"><a href="https://www.rideuta.com/" target="_blank" rel="noreferrer">UTA GTFS-Realtime ↗</a><span class="source-state"></span><small>TRAX, bus, and FrontRunner service alerts</small></div>
+          </div>
+          <div class="source-group"><h3>Places &amp; outdoors</h3>
+            <div class="source-item" data-src="ugrc"><a href="https://gis.utah.gov/" target="_blank" rel="noreferrer">UGRC Utah Trailheads ↗</a><span class="source-state"></span><small>Official state trailhead and trail data</small></div>
+            <div class="source-item" data-src="ridb"><a href="https://ridb.recreation.gov/" target="_blank" rel="noreferrer">Recreation.gov RIDB ↗</a><span class="source-state"></span><small>Campgrounds and recreation facilities</small></div>
+            <div class="source-item" data-src="osm"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors ↗</a><span class="source-state"></span><small>Cafés, food, and community places (ODbL)</small></div>
+          </div>
+          <div class="source-group"><h3>Events</h3>
+            <div class="source-item"><a href="https://developer.ticketmaster.com/" target="_blank" rel="noreferrer">Ticketmaster Discovery API ↗</a><span class="source-state"></span><small>Concerts, games, and ticketed shows</small></div>
+          </div>
+          <div class="source-group"><h3>Maps &amp; AI</h3>
+            <div class="source-item"><a href="https://www.maptiler.com/" target="_blank" rel="noreferrer">MapTiler ↗</a><span class="source-state"></span><small>Street map, terrain, and contour lines</small></div>
+            <div class="source-item"><a href="https://openfreemap.org/" target="_blank" rel="noreferrer">OpenFreeMap ↗</a><span class="source-state"></span><small>Advanced map basemap (OSM data)</small></div>
+            <div class="source-item"><a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noreferrer">AWS Terrain Tiles ↗</a><span class="source-state"></span><small>Elevation for 3D terrain and the smog layer</small></div>
+            <div class="source-item"><a href="https://platform.openai.com/docs" target="_blank" rel="noreferrer">OpenAI ↗</a><span class="source-state"></span><small>Ask YOUtah answers, grounded in the sources above</small></div>
+          </div>
+        </div>
       </section>
     </main>
     <footer class="shell footer"><span>Comprehensive Utah · Built for people who are still learning the grid.</span><a href="/api/health" target="_blank" rel="noreferrer">API health</a></footer>
