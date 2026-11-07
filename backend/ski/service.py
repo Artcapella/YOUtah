@@ -101,7 +101,7 @@ async def _request_feed(key: str, url: str, params: dict | None) -> Feed:
             timeout=httpx.Timeout(7.0, connect=3.0), follow_redirects=True,
             headers={"User-Agent": settings.nws_user_agent, "Accept": "application/json,text/html"},
         ) as client:
-            response = await client.get(url, params=params)
+            response = await asyncio.wait_for(client.get(url, params=params), timeout=8.0)
             response.raise_for_status()
             if key == "alta":
                 data = _embedded_json(response.text, "window.Alta")
@@ -125,7 +125,7 @@ async def _request_feed(key: str, url: str, params: dict | None) -> Feed:
         _cache[key] = result
         _retry_after.pop(key, None)
         return result
-    except (httpx.HTTPError, ValueError, TypeError, KeyError, AttributeError):
+    except (httpx.HTTPError, ValueError, TypeError, KeyError, AttributeError, TimeoutError):
         _retry_after[key] = time.monotonic() + 60
         return _fallback(key)
 
@@ -357,18 +357,29 @@ async def ski_conditions() -> SkiResponse:
     now, resorts = _now(), []
     for index, resort in enumerate(RESORTS):
         feed = feeds.get(resort["id"], Feed())
-        operations = parse_operations(resort, feed, now)
+        try:
+            operations = parse_operations(resort, feed, now)
+            report = parse_snow_report(resort, feed, now)
+        except (ValueError, TypeError, KeyError, AttributeError):
+            operations = SkiOperations(source=_source(resort["name"], resort["website"], Feed()))
+            report = SkiSnowReport(source=_source(resort["name"], resort["website"], Feed()))
         if resort["id"] == "snowbird" and results[-1].data is not None:
             run_feed = results[-1]
             if not run_feed.stale:
-                operations.runs = parse_runs(run_feed.data)
-                operations.trails_total = len(operations.runs) or None
-                operations.trails_open = sum(run.status == "open" for run in operations.runs) if operations.runs else None
+                try:
+                    operations.runs = parse_runs(run_feed.data)
+                    operations.trails_total = len(operations.runs) or None
+                    operations.trails_open = sum(run.status == "open" for run in operations.runs) if operations.runs else None
+                except (ValueError, TypeError, KeyError, AttributeError):
+                    pass
+        try:
+            forecast = parse_forecast(weather.data[index] if weather.data else None, weather, now)
+        except (ValueError, TypeError, KeyError, AttributeError, IndexError):
+            forecast = SkiForecast(source=_source("Open-Meteo · CC BY 4.0", "https://open-meteo.com/", Feed()))
         resorts.append(SkiResort(
             **{k: v for k, v in resort.items() if k not in ("lat", "lng")},
             coordinate=Coordinate(lat=resort["lat"], lng=resort["lng"]),
-            operations=operations, snow_report=parse_snow_report(resort, feed, now),
-            forecast=parse_forecast(weather.data[index] if weather.data else None, weather, now),
+            operations=operations, snow_report=report, forecast=forecast,
             busyness=busyness(operations),
         ))
     return SkiResponse(generated_at=now, resorts=resorts)

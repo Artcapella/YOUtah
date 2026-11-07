@@ -123,7 +123,8 @@
   async function attachTerrain(map, isEnabled) {
     const options = terrainOptions;
     const state = { map, isEnabled, options, data: null, popup: null };
-    let styleReady = map.isStyleLoaded();
+    // Sources may still stream after the style is ready (especially with 3D terrain).
+    let styleReady = Boolean(map.getStyle()?.layers?.length);
     terrainMaps.add(state);
     function visibility() {
       for (const id of TERRAIN_LAYERS) if (map.getLayer(id)) {

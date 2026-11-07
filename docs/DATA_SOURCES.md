@@ -12,6 +12,7 @@ Each provider adapter is responsible for four things: fetch, validate, normalize
 | `ridb.py` | Recreation.gov RIDB `/api/v1/facilities?state=UT`, 50 per page, key in the `apikey` header. Descriptions are HTML (stripped); `0,0` means no location | `PlaceRecord` → `places` (`ridb` ingest) | `RIDB_API_KEY` |
 | `osm.py` | Overpass API: named parks, viewpoints, museums, art, attractions and libraries, statewide (`ISO3166-2=US-UT`) or around a point | `PlaceRecord` → `places` (`osm` ingest) | None, but a descriptive `NWS_USER_AGENT` (406 otherwise) |
 | `google_places.py` | Google Places API (New) `places:searchText` and place details, with field masks | `GooglePlace`, `GoogleReview` (live only, never stored) | `GOOGLE_MAPS_API_KEY` |
+| `backend/ski/` | Official Alta, Snowbird, Brighton, Solitude, Deer Valley and Park City feeds; Open-Meteo; OSM terrain extract | Shared `/api/ski` and map geography; [coverage and freshness](SKI_LAYER.md) | None for development; optional `OPEN_METEO_API_KEY` customer plan |
 | `arcgis.py` | Any ArcGIS feature layer: paginated, `outSR=4326` (Utah layers are stored in Web Mercator), HTTP-200 error envelopes raised | Raw features for an adapter to map | Per layer |
 | `http.py` | Shared ingestion client: project User-Agent, retries 429/5xx with backoff (honours `Retry-After`), errors strip query strings so keys never reach logs | — | — |
 | `events.py` | Ticketmaster Discovery (live), Eventbrite, Campus Connect ICS, library feeds | `LocalEvent` | `TICKETMASTER_API_KEY` |
