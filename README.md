@@ -70,7 +70,7 @@ map + cookie persona
 1. Push migrations: `npx supabase db push`.
 2. In Vercel, add a newly created **rotated** `OPENAI_API_KEY` only under Project Settings → Environment Variables (Production and Preview). Do not place it in a `NEXT_PUBLIC_*` variable or commit it.
 3. Leave `OPENAI_MODEL=gpt-6-astra` and `OPENAI_EMBEDDING_MODEL=text-embedding-3-small` unless you also migrate the `vector(1536)` column for a different embedding dimensionality.
-4. Add `CRON_SECRET`; the hourly `/api/cron/refresh-guide` job rebuilds derived documents and embeds a bounded batch of changed rows. Existing ingest crons keep live sources fresher than that where supported.
+4. Add `CRON_SECRET`; the `/api/cron/refresh-guide` job (daily on Vercel Hobby, hourly via `.github/workflows/live-cron.yml`) rebuilds derived documents and embeds a bounded batch of changed rows. Existing ingest crons keep live sources fresher than that where supported.
 
 The optional “Include live web sources” toggle uses the OpenAI Responses API web-search tool, not a separate search-provider key. The existing provider keys remain optional: MapTiler improves tiles; Ticketmaster, UDOT, RIDB, Google Places, and similar connectors each need their own account/key to move from their built-in fallback to live data.
 
