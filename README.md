@@ -5,7 +5,7 @@ A Vercel-ready **FastAPI/Python** application with a Supabase-backed discovery d
 ## What is included
 
 - Responsive dashboard shell with an interactive MapLibre map, filters, featured events, Utah stories, and source-status UI.
-- A full-screen map hub at **`/map`** (`public/map.html`, demo data for now) with MapTiler 3D terrain and contours, layers, trip planning, and an inversion view. On Vercel the CDN serves it through the `/map` rewrite in `vercel.json`; locally `app.py` serves it. Its MapTiler key is a browser key: restrict its allowed origins in the MapTiler dashboard.
+- A full-screen map hub at **`/map`** (`public/map.html`) with MapTiler 3D terrain and contours, layers, trip planning, and an inversion view. It hydrates normalized places, events and DAQ inversion estimates from `/api/map-data`; unsupported layers remain visibly offline samples. On Vercel the CDN serves it through the `/map` rewrite in `vercel.json`; locally `app.py` serves it. Its MapTiler key is a browser key: restrict its allowed origins in the MapTiler dashboard.
 - A focused **`/map/simple`** alternative for everyday place finding: a north-up, 2D MapTiler street map with search, category filters, source-backed pins, and an optional location control. The advanced 3D map remains at `/map`.
 - Python FastAPI API, Pydantic domain models, and a working NWS server-side adapter with mock-safe fallbacks.
 - A deterministic **Escape the Inversion** recommendation route that is ready to receive Utah DAQ, UDOT, UTA, elevation, and trailhead data.
@@ -64,8 +64,8 @@ Commit the migration with the feature branch. This keeps the shared database rep
 | --- | --- | --- |
 | `backend/providers/nws.py` | Weather, forecasts, alerts | Live adapter (display + numeric model inputs) + fallback |
 | `backend/providers/utah_daq.py` | AQI and inversion ceiling | Live: 14 county stations, nearest-station AQI (EPA 2024 breakpoints). Inversion cap is still a placeholder |
-| `backend/providers/udot.py` | Roads, canyon access, traffic | Typed adapter shell + demo values |
-| `backend/providers/uta.py` | GTFS-RT transit / ski bus | Typed adapter shell + demo values |
+| `backend/providers/udot.py` | Roads, canyon access, traffic | Live UDOT alerts API when `UDOT_API_KEY` is set |
+| `backend/providers/uta.py` | GTFS-RT transit / ski bus | Live public GTFS-Realtime service-alert feed |
 | `backend/providers/events.py` | Ticketmaster, Eventbrite, campus/library events | Ticketmaster live when `TICKETMASTER_API_KEY` is set; demo values otherwise |
 | `backend/providers/ugrc.py` | Trails, places, cultural layers | Live: ~560 statewide trailheads (ArcGIS, no key) for the `ugrc` ingest. Dashboard fallback is still demo |
 | `backend/providers/ridb.py` | Campgrounds and recreation facilities | Live with `RIDB_API_KEY` for the `ridb` ingest |

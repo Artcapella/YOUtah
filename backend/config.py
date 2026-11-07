@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     ridb_api_key: str = ""
     # Google Places API (New). Server-side only; every call is billed.
     google_maps_api_key: str = ""
+    # OpenAI stays server-side. Never use a NEXT_PUBLIC_* name for this key.
+    openai_api_key: str = ""
+    openai_model: str = "gpt-5-mini"
+    openai_embedding_model: str = "text-embedding-3-small"
+    openai_enable_web_search: bool = True
     ingest_secret: str = ""
     # Vercel Cron sends `Authorization: Bearer $CRON_SECRET` to scheduled routes.
     cron_secret: str = ""

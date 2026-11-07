@@ -1,11 +1,14 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
+    { "source": "/", "destination": "/map-simple.html" },
     { "source": "/map/simple", "destination": "/map-simple.html" },
     { "source": "/map", "destination": "/map.html" }
   ],
   "crons": [
     { "path": "/api/cron/ingest", "schedule": "17 10 * * *" },
+    { "path": "/api/cron/ingest-live", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/refresh-guide", "schedule": "7 * * * *" },
     { "path": "/api/cron/ingest-places", "schedule": "43 10 * * 1" }
   ]
 }

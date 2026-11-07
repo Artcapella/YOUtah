@@ -34,10 +34,6 @@ HOMEPAGE_URL = "https://air.utah.gov"
 # GMT offset of -7 for every Utah site), so the feed's naive timestamps are UTC-7.
 UTAH_STANDARD_TIME = timezone(timedelta(hours=-7), "MST")
 
-# The feed has no ceilometer data; this placeholder cap stays until a ceilometer source is connected.
-PLACEHOLDER_INVERSION_ESTIMATE_M = 1600
-
-
 def _station(id: str, name: str, county: str, aqs_site: str, lat: float, lng: float, elevation_m: float) -> AirStation:
     return AirStation(
         id=id, name=name, county=county, aqs_site=aqs_site,
@@ -182,10 +178,24 @@ def pm25_aqi(pm25_24hr_avg: float) -> tuple[int, str]:
     return 500, "Hazardous"
 
 
+def estimate_inversion_height_m(station: AirStation, reading: AirStationReading) -> int:
+    """A transparent DAQ-only estimate until a ceilometer is available.
+
+    Utah DAQ does not publish a mixing height.  Rather than presenting a fixed value as a
+    measurement, estimate the likely shallow stable layer from local PM2.5 and wind: stagnant,
+    polluted air means a deeper valley layer; wind mixes it down.  The caller labels this an
+    estimate and preserves the station source/time in the API response.
+    """
+    pm25 = max(0.0, reading.pm25_24hr_avg or reading.pm25 or 0.0)
+    wind = max(0.0, reading.wind_mph or 0.0)
+    depth_m = 180 + min(pm25, 80) * 9 - min(wind, 25) * 13
+    return round(station.elevation_m + max(120, min(depth_m, 850)))
+
+
 async def fetch_air_quality(point: Coordinate) -> AirSnapshot:
     """Live AQI from the nearest DAQ station; demo values marked ``degraded`` if DAQ is unreachable."""
     try:
-        _, _, readings = await fetch_nearest_readings(point)
+        station, _, readings = await fetch_nearest_readings(point)
     except Exception as error:
         logger.warning("Utah DAQ unavailable, serving demo air quality: %s", error)
         return demo_air().model_copy(update={"source": "degraded"})
@@ -196,7 +206,7 @@ async def fetch_air_quality(point: Coordinate) -> AirSnapshot:
         aqi=aqi,
         category=category,
         pm25=latest.pm25_24hr_avg,
-        inversion_estimate_m=PLACEHOLDER_INVERSION_ESTIMATE_M,
+        inversion_estimate_m=estimate_inversion_height_m(station, latest),
         source="live",
         updated_at=latest.observed_at,
     )

@@ -1,3 +1,4 @@
+import asyncio
 import hmac
 from pathlib import Path
 
@@ -9,13 +10,21 @@ from datetime import date
 
 from backend import repository
 from backend.config import settings
+from backend.guide import (
+    GuideAnswerRequest,
+    GuideSearchRequest,
+    answer_guide,
+    guide_status,
+    refresh_guide_index,
+    search_guide,
+)
 from backend.intelligence.model import model_status
 from backend.intelligence.router import router as intelligence_router
 from backend.models import Coordinate, IngestRequest
 from backend.providers.events import search_ticketmaster_events
 from backend.services.dashboard import build_dashboard, build_inversion_recommendations
 from backend.services.event_recommendations import recommend_events
-from backend.services.ingest import ingest_all_places, run_ingest
+from backend.services.ingest import ingest_all_places, ingest_events, run_ingest
 
 ROOT_DIR = Path(__file__).resolve().parent
 PUBLIC_DIR = ROOT_DIR / "public"
@@ -38,7 +47,8 @@ app.add_middleware(
 
 @app.get("/", include_in_schema=False)
 async def homepage() -> FileResponse:
-    return FileResponse(PUBLIC_DIR / "index.html")
+    """Map-first by default; the discovery dashboard remains available as a static artifact."""
+    return FileResponse(PUBLIC_DIR / "map-simple.html")
 
 
 @app.get("/map", include_in_schema=False)
@@ -63,6 +73,7 @@ async def health() -> dict:
         "supabase_status": await repository.check_connection(),
         # trained_nowcast | fallback (see /api/intelligence/model-status for the reason)
         "intelligence_model": model_status()["status"],
+        "guide": guide_status()["status"],
     }
 
 
@@ -78,6 +89,41 @@ async def dashboard(
         lng: float = Query(default=-111.8910, ge=-180, le=180),
 ) -> dict:
     return (await build_dashboard(Coordinate(lat=lat, lng=lng))).model_dump(mode="json")
+
+
+@app.get("/api/map-data")
+async def map_data(
+        lat: float = Query(default=40.7608, ge=-90, le=90),
+        lng: float = Query(default=-111.8910, ge=-180, le=180),
+) -> dict:
+    """Source-aware map contract. The browser renders only the lanes returned here when live data exists."""
+    data = await build_dashboard(Coordinate(lat=lat, lng=lng))
+    return {
+        "generated_at": data.generated_at,
+        "air": data.air,
+        "sources": data.sources,
+        "places": data.places,
+        "events": data.events,
+        "advisories": data.advisories,
+    }
+
+
+@app.get("/api/guide/status")
+async def guide_health() -> dict:
+    """Safe agent configuration signal; intentionally contains no credential values."""
+    return guide_status()
+
+
+@app.post("/api/guide/search")
+async def guide_search(request: GuideSearchRequest) -> dict:
+    """Hybrid keyword/vector retrieval for map and guide UI."""
+    return (await search_guide(request)).model_dump(mode="json")
+
+
+@app.post("/api/guide/answer")
+async def guide_answer(request: GuideAnswerRequest) -> dict:
+    """Source-aware Utah planning response with an offline-safe fallback."""
+    return (await answer_guide(request)).model_dump(mode="json")
 
 
 @app.get("/api/recommendations/escape-inversion")
@@ -131,11 +177,27 @@ async def scheduled_ingest(authorization: str | None = Header(default=None)) -> 
     return await run_ingest("utah-daq")
 
 
+@app.get("/api/cron/ingest-live", include_in_schema=False)
+async def scheduled_live_ingest(authorization: str | None = Header(default=None)) -> dict:
+    """Fifteen-minute operational ingest for road, transit, and configured event feeds."""
+    _require_cron_secret(authorization)
+    results = await asyncio.gather(run_ingest("udot"), run_ingest("uta"), ingest_events())
+    failed = [result["source"] for result in results if result["status"] == "failed"]
+    return {"source": "live", "status": "failed" if failed else "succeeded", "failed": failed, "results": results}
+
+
 @app.get("/api/cron/ingest-places", include_in_schema=False)
 async def scheduled_places_ingest(authorization: str | None = Header(default=None)) -> dict:
     """Weekly Vercel Cron target: UGRC trailheads, Recreation.gov facilities and OSM POIs into `places`."""
     _require_cron_secret(authorization)
     return await ingest_all_places()
+
+
+@app.get("/api/cron/refresh-guide", include_in_schema=False)
+async def scheduled_guide_refresh(authorization: str | None = Header(default=None)) -> dict:
+    """Hourly derived-index refresh; upstream ingest jobs run on their own cadences."""
+    _require_cron_secret(authorization)
+    return await refresh_guide_index()
 
 
 def _require_cron_secret(authorization: str | None) -> None:

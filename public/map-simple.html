@@ -25,6 +25,11 @@
           <a class="active" href="/map/simple" aria-current="page">Simple</a>
           <a href="/map">Advanced</a>
         </nav>
+        <button class="persona-button" id="persona-launcher" type="button" aria-haspopup="dialog" title="Personalize your Utah guide">
+          <span class="persona-spark" aria-hidden="true">✦</span>
+          <span>My Utah</span>
+          <span class="persona-dot" id="persona-dot" aria-label="Personalization quiz incomplete"></span>
+        </button>
       </header>
 
       <aside class="place-panel" aria-label="Places on the map">
@@ -55,6 +60,114 @@
         <button id="zoom-out" type="button" title="Zoom out" aria-label="Zoom out">−</button>
       </div>
       <div class="map-status" id="map-status" role="status">Loading street map…</div>
+
+      <button class="guide-launcher" id="guide-launcher" type="button" aria-controls="guide-sheet" aria-expanded="false">
+        <span aria-hidden="true">✦</span>
+        <span>Ask YOUtah</span>
+      </button>
+
+      <section class="guide-sheet" id="guide-sheet" aria-label="YOUtah travel guide" hidden>
+        <header class="guide-heading">
+          <div>
+            <p class="eyebrow">Your Utah guide</p>
+            <h2>What are you into?</h2>
+          </div>
+          <button class="sheet-close" id="guide-close" type="button" aria-label="Close guide">×</button>
+        </header>
+        <div class="guide-messages" id="guide-messages" aria-live="polite">
+          <article class="guide-message assistant">
+            <p>Ask for a day plan, a trail, a free community event, or a place that matches your mood. I’ll show the sources behind every suggestion.</p>
+          </article>
+        </div>
+        <form class="guide-form" id="guide-form">
+          <label class="sr-only" for="guide-question">Ask YOUtah</label>
+          <textarea id="guide-question" rows="2" maxlength="600" placeholder="Plan a low-key Saturday with good coffee and a short hike"></textarea>
+          <label class="live-web-option"><input id="guide-live-web" type="checkbox" /> Include live web sources when useful</label>
+          <button class="guide-send" id="guide-send" type="submit"><span>Ask</span><span aria-hidden="true">↗</span></button>
+        </form>
+      </section>
+
+      <dialog class="persona-dialog" id="persona-dialog" aria-labelledby="persona-title">
+        <form class="persona-form" id="persona-form">
+          <div class="persona-heading">
+            <div>
+              <p class="eyebrow">Make this yours</p>
+              <h2 id="persona-title">Your Utah taste profile</h2>
+              <p class="persona-intro">Takes about a minute. It stays in this browser, not in an account.</p>
+            </div>
+            <button class="sheet-close" id="persona-close" type="button" aria-label="Close personalization quiz">×</button>
+          </div>
+
+          <fieldset>
+            <legend>What reliably sounds fun?</legend>
+            <div class="taste-options">
+              <label><input type="checkbox" name="interests" value="outdoors" /> Outside time</label>
+              <label><input type="checkbox" name="interests" value="food" /> Food & coffee</label>
+              <label><input type="checkbox" name="interests" value="culture" /> Art & culture</label>
+              <label><input type="checkbox" name="interests" value="community" /> Community</label>
+              <label><input type="checkbox" name="interests" value="family" /> Family-friendly</label>
+              <label><input type="checkbox" name="interests" value="winter" /> Snow days</label>
+            </div>
+          </fieldset>
+
+          <div class="quiz-selects">
+            <label>Are you mostly a…
+              <select name="visitor_type">
+                <option value="">Choose one</option>
+                <option value="local">Utah local</option>
+                <option value="newcomer">Utah newcomer</option>
+                <option value="visitor">Visitor</option>
+              </select>
+            </label>
+            <label>Your ideal pace
+              <select name="pace">
+                <option value="">Choose one</option>
+                <option value="easy">Easygoing</option>
+                <option value="balanced">A balanced day</option>
+                <option value="full">Fit it all in</option>
+              </select>
+            </label>
+            <label>Usually with…
+              <select name="companions">
+                <option value="">Choose one</option>
+                <option value="solo">Just me</option>
+                <option value="couple">A partner</option>
+                <option value="friends">Friends</option>
+                <option value="family">Family</option>
+                <option value="group">A group</option>
+              </select>
+            </label>
+            <label>Typical budget
+              <select name="budget">
+                <option value="">Choose one</option>
+                <option value="free">Free first</option>
+                <option value="low">Keep it low</option>
+                <option value="moderate">Moderate</option>
+                <option value="flexible">Flexible</option>
+              </select>
+            </label>
+          </div>
+
+          <label class="home-base">Home base or a place you’ll be staying
+            <input name="home_base" maxlength="100" placeholder="e.g. Sugar House, Moab, Ogden" />
+          </label>
+
+          <fieldset>
+            <legend>Anything to plan around?</legend>
+            <div class="taste-options compact">
+              <label><input type="checkbox" name="access_needs" value="step-free" /> Step-free access</label>
+              <label><input type="checkbox" name="access_needs" value="short-walks" /> Short walks</label>
+              <label><input type="checkbox" name="access_needs" value="pet-friendly" /> Pet-friendly</label>
+              <label><input type="checkbox" name="access_needs" value="transit" /> Transit-friendly</label>
+            </div>
+          </fieldset>
+
+          <footer class="persona-actions">
+            <button class="text-button" id="persona-reset" type="button">Reset profile</button>
+            <button class="save-persona" type="submit">Save my profile <span aria-hidden="true">→</span></button>
+          </footer>
+        </form>
+      </dialog>
     </main>
 
     <script src="https://unpkg.com/maplibre-gl@5.2.0/dist/maplibre-gl.js"></script>

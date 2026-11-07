@@ -13,10 +13,13 @@ from backend.config import settings
 from backend.intelligence.features import STATION_READING_SCHEMA_VERSION
 from backend.intelligence.model import current_model_identity, predict_comfort
 from backend.intelligence.service import comfort_features_from_readings
-from backend.models import AirStationReading, PlaceRecord
+from backend.models import Advisory, AirStationReading, Coordinate, LocalEvent, PlaceRecord
+from backend.providers.events import fetch_ticketmaster_events
 from backend.providers.osm import fetch_pois
 from backend.providers.ridb import fetch_facilities
 from backend.providers.ugrc import fetch_trailheads
+from backend.providers.udot import fetch_advisories
+from backend.providers.uta import fetch_transit_alerts
 from backend.providers.utah_daq import STATIONS_BY_ID, fetch_all_station_readings
 from backend.supabase_client import get_service_client
 
@@ -26,6 +29,8 @@ CHUNK_SIZE = 500
 SNAPSHOT_CONFLICT = "entity_type,entity_id,prediction_time,feature_schema_version"
 PREDICTION_CONFLICT = "entity_type,entity_id,prediction_time,horizon_hours,model_name,model_version"
 PLACE_CONFLICT = "source_id,external_id"
+ADVISORY_CONFLICT = "source_id,external_id"
+EVENT_CONFLICT = "source_id,external_id"
 
 # Places sources, keyed by their `sources.slug`. Each fetcher returns statewide records.
 PLACE_SOURCES: dict[str, Callable[[], Awaitable[list[PlaceRecord]]]] = {
@@ -46,12 +51,13 @@ async def run_ingest(source: str) -> dict:
         return await ingest_utah_daq()
     if source in PLACE_SOURCES:
         return await ingest_places(source)
-    return {
-        "source": source,
-        "status": "accepted",
-        "message": "Ingestion contract is ready; connect this source adapter and Supabase write in the next increment.",
-        "accepted_at": _utcnow().isoformat(),
-    }
+    if source == "udot":
+        return await ingest_advisories("udot", fetch_advisories)
+    if source == "uta":
+        return await ingest_advisories("uta", fetch_transit_alerts)
+    if source == "events":
+        return await ingest_events()
+    return {"source": source, "status": "unsupported", "message": "No configured ingestion adapter for this source."}
 
 
 def snapshot_rows(readings: list[AirStationReading], available_at: datetime) -> list[dict[str, Any]]:
@@ -255,3 +261,61 @@ async def ingest_all_places() -> dict:
     results = [await ingest_places(slug) for slug in PLACE_SOURCES]
     failed = [result["source"] for result in results if result["status"] == "failed"]
     return {"source": "places", "status": "failed" if failed else "succeeded", "failed": failed, "results": results}
+
+
+def advisory_rows(records: list[Advisory], source_id: str, fetched_at: datetime) -> list[dict[str, Any]]:
+    return [{
+        "source_id": source_id, "external_id": record.id, "kind": record.kind, "severity": record.severity,
+        "title": record.title, "body": record.body, "source_url": record.source_url,
+        "raw_payload": record.model_dump(mode="json"), "updated_at": fetched_at.isoformat(),
+    } for record in records]
+
+
+async def ingest_advisories(slug: str, fetch: Callable[[], Awaitable[list[Advisory]]]) -> dict:
+    """Persist UDOT/UTA current alerts. Upsert makes frequent cron runs idempotent."""
+    client = get_service_client()
+    if client is None:
+        return {"source": slug, "status": "skipped", "message": "SUPABASE_URL and SUPABASE_SECRET_KEY are required for ingestion."}
+    source_id = await _source_id(client, slug)
+    if source_id is None:
+        return {"source": slug, "status": "failed", "error": f"No sources row for '{slug}'. Apply migrations first."}
+    run_id = await _start_run(client, slug, source_id)
+    records: list[Advisory] = []
+    try:
+        records = await fetch()
+        written = await _upsert(client, "advisories", advisory_rows(records, source_id, _utcnow()), ADVISORY_CONFLICT)
+    except Exception as error:
+        await _finish_run(client, run_id, status="failed", records_seen=len(records), error_message=str(error)[:500])
+        return {"source": slug, "status": "failed", "records_seen": len(records), "error": str(error)[:500]}
+    await _finish_run(client, run_id, status="succeeded", records_seen=len(records), records_written=written)
+    return {"source": slug, "status": "succeeded", "records_seen": len(records), "records_written": written}
+
+
+def event_rows(records: list[LocalEvent], source_id: str, fetched_at: datetime) -> list[dict[str, Any]]:
+    return [{
+        "source_id": source_id, "external_id": record.id, "title": record.title, "category": record.category,
+        "starts_at": record.starts_at.isoformat(), "is_free": record.is_free, "ticket_url": record.source_url,
+        "source_url": record.source_url, "latitude": record.coordinate.lat, "longitude": record.coordinate.lng,
+        "raw_payload": record.model_dump(mode="json"), "updated_at": fetched_at.isoformat(),
+    } for record in records]
+
+
+async def ingest_events(point: Coordinate = Coordinate(lat=40.7608, lng=-111.8910)) -> dict:
+    client = get_service_client()
+    if client is None:
+        return {"source": "events", "status": "skipped", "message": "SUPABASE_URL and SUPABASE_SECRET_KEY are required for ingestion."}
+    if not settings.ticketmaster_api_key:
+        return {"source": "events", "status": "skipped", "message": "TICKETMASTER_API_KEY is required for event ingestion."}
+    source_id = await _source_id(client, "ticketmaster")
+    if source_id is None:
+        return {"source": "events", "status": "failed", "error": "No sources row for 'ticketmaster'. Apply migrations first."}
+    run_id = await _start_run(client, "ticketmaster", source_id)
+    records: list[LocalEvent] = []
+    try:
+        records = await fetch_ticketmaster_events(point)
+        written = await _upsert(client, "events", event_rows(records, source_id, _utcnow()), EVENT_CONFLICT)
+    except Exception as error:
+        await _finish_run(client, run_id, status="failed", records_seen=len(records), error_message=str(error)[:500])
+        return {"source": "events", "status": "failed", "records_seen": len(records), "error": str(error)[:500]}
+    await _finish_run(client, run_id, status="succeeded", records_seen=len(records), records_written=written)
+    return {"source": "events", "status": "succeeded", "records_seen": len(records), "records_written": written}

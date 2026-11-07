@@ -14,10 +14,8 @@
     • Elevation (hillshade, 3D terrain, smog lid, click-elevation): AWS Terrain Tiles (terrarium)
     • MapTiler terrain + contours use the browser key in CONFIG.maptilerKey (override with
       window.YOUTAH_MAPTILER_KEY). If MapTiler rejects the key, the map falls back to the keyless terrain.
-  All feature data below (DATA) is DEMO data and is labelled as such in the UI.
-  Hook-up: replace a layer's data at runtime with
-      YOUtah.registerData('events', arrayOfItems)   // same item shape as DATA.events
-  or point fetchers at the FastAPI routes (see CONFIG.api).
+  Static sample data is retained as an offline fallback. On load, /api/map-data replaces
+  places, events, advisories and air quality with source-aware API data when available.
   Public API for the chatbot / RAG later: window.YOUtah (bottom of file).
 -->
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" />
@@ -1754,7 +1752,32 @@ function locate(explicit) {
   initMap();
   locate(false);
   const h = decodeURIComponent(location.hash.slice(1)); if (BYID[h]) setTimeout(() => select(h), 600);
+  hydrateLiveData();
 })();
+
+async function hydrateLiveData() {
+  try {
+    const response = await fetch('/api/map-data', { headers: { Accept: 'application/json' } });
+    if (!response.ok) throw new Error(`map data ${response.status}`);
+    const payload = await response.json();
+    const toItem = p => P(p.id, p.name, p.coordinate.lat, p.coordinate.lng, { d:p.description, elev:p.elevation_m, src:'places', pop:.3 });
+    const byCategory = { trailhead:'trailheads', park:'parks', library:'libraries', food:'food', art:'art', venue:'venues', community:'community' };
+    const grouped = {};
+    for (const place of payload.places || []) {
+      const layer = byCategory[place.category];
+      if (!layer) continue;
+      (grouped[layer] ||= []).push(toItem(place));
+    }
+    Object.entries(grouped).forEach(([layer, items]) => YOUtah.registerData(layer, items));
+    YOUtah.registerData('events', (payload.events || []).map(e => P(e.id, e.title, e.coordinate.lat, e.coordinate.lng, { d:e.venue, start:e.starts_at, price:e.is_free ? 0 : undefined, src:'events', pop:.4 })));
+    // Advisories have no normalized geometry yet, so they remain in the dashboard drawer
+    // instead of being misleadingly pinned at a made-up map location.
+    if (payload.air) YOUtah.setCapHeight(payload.air.inversion_estimate_m);
+    document.documentElement.dataset.liveMap = 'true';
+  } catch (error) {
+    console.info('Using offline map samples:', error.message);
+  }
+}
 
 /* =========================================================================
    13. Public API — for Claude Code hook-up and the future chatbot / RAG navigator

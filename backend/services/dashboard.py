@@ -11,6 +11,7 @@ from backend.providers.udot import fetch_advisories
 from backend.providers.ugrc import fetch_places
 from backend.providers.uta import fetch_transit_alerts
 from backend.providers.utah_daq import fetch_air_quality
+from backend.geo import haversine_km
 from backend.seed_data import demo_sources, demo_weather, utcnow
 
 T = TypeVar("T")
@@ -96,20 +97,28 @@ async def build_inversion_recommendations(point: Coordinate) -> InversionRespons
     dashboard = await build_dashboard(point)
     cap = dashboard.air.inversion_estimate_m
     candidates = [item for item in dashboard.places if item.category in {"trailhead", "park"}]
-    recommendations = [
-        InversionRecommendation(
-            **place.model_dump(),
-            score=max(68, 94 - index * 13),
-            travel_note="15 min from downtown · car or rideshare" if index == 0 else "UTA connection nearby · check the final approach",
-            air_note="Above the estimated inversion cap" if place.elevation_m and place.elevation_m > cap else "Near the estimated inversion cap",
-            access="good" if index == 0 else "check conditions",
-        )
-        for index, place in enumerate(candidates)
-    ]
+    road_alert = any(item.kind == "road" and item.severity == "high" for item in dashboard.advisories)
+    recommendations = []
+    for place in candidates:
+        distance_km = haversine_km(point, place.coordinate)
+        elevation_gain = (place.elevation_m or cap) - cap
+        above_cap = elevation_gain > 0
+        score = 55 + min(35, max(0, elevation_gain) / 20) + max(0, 12 - distance_km / 4)
+        if road_alert:
+            score -= 12
+        access = "check conditions" if road_alert or distance_km > 45 else "good"
+        travel = f"{distance_km:.0f} km from your location"
+        if road_alert:
+            travel += " · active UDOT advisory"
+        recommendations.append(InversionRecommendation(
+            **place.model_dump(), score=round(max(0, min(100, score))), travel_note=travel,
+            air_note=(f"~{elevation_gain:.0f} m above the estimated mixing cap" if above_cap
+                      else f"~{abs(elevation_gain):.0f} m below the estimated mixing cap"), access=access,
+        ))
     recommendations.sort(key=lambda item: item.score, reverse=True)
     return InversionResponse(
         generated_at=utcnow(),
         inversion_estimate_m=cap,
         recommendations=recommendations,
-        disclaimer="Inversion height is an estimate. Check official road, weather, and trail conditions before leaving.",
+        disclaimer="Mixing-cap estimate is derived from the nearest Utah DAQ PM2.5 and wind reading, not a ceilometer observation. Check official road, weather, and trail conditions before leaving.",
     )
