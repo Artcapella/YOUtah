@@ -14,9 +14,12 @@
       if (!wasEnabled) document.querySelector('[data-tab="layers"]').click();
     }
     ski.updateTerrain();
-    const simple = document.querySelector('#viewSwitch a[href^="/map/simple"]');
-    if (simple) simple.href = enabled ? "/map/simple?ski=1" : "/map/simple";
-    if (enabled && !wasEnabled && hub.map) hub.map.fitBounds([[-111.72, 40.55], [-111.45, 40.68]], { padding: matchMedia("(max-width:899px)").matches ? { top: 175, bottom: 220, left: 30, right: 65 } : { top: 80, bottom: 50, left: 400, right: 80 }, maxZoom: 11.8 });
+    document.querySelectorAll('#viewSwitch a[href^="/map/simple"], .view-switch-m a[href^="/map/simple"]').forEach((simple) => { simple.href = enabled ? "/map/simple?ski=1" : "/map/simple"; });
+    if (enabled && !wasEnabled && hub.map) {
+      document.querySelector("#inv").classList.add("collapsed");
+      const fit = () => hub.map.fitBounds([[-111.72, 40.55], [-111.45, 40.68]], { padding: matchMedia("(max-width:899px)").matches ? { top: 175, bottom: 220, left: 30, right: 65 } : { top: 80, bottom: 50, left: 400, right: 80 }, maxZoom: 11.8, duration: 700 });
+      if (mapReady) fit(); else hub.map.once("style.load", fit);
+    }
     wasEnabled = enabled;
   }
   ski.subscribe((state) => {

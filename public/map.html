@@ -91,6 +91,9 @@ body.detail-open #fabs{display:none}
 #viewSwitch a{padding:7px 4px;border-radius:8px;color:var(--ink-dim);font-size:11px;font-weight:700;text-align:center;text-decoration:none}
 #viewSwitch a:hover{background:rgba(255,255,255,.09);color:var(--ink)}
 #viewSwitch a.active{background:var(--glacier);color:var(--deeper)}
+.view-switch-m{display:none;flex:none;padding:2px;border-radius:999px;background:rgba(255,255,255,.06)}
+.view-switch-m a{padding:7px 9px;border-radius:999px;color:var(--ink-dim);font-size:12px;font-weight:700;text-decoration:none}
+.view-switch-m a.active{background:var(--glacier);color:var(--deeper)}
 
 /* ---------- panel (left sidebar desktop / bottom sheet mobile) ---------- */
 .sheet{position:fixed;z-index:20;display:flex;flex-direction:column;border-radius:var(--r);overflow:hidden}
@@ -218,6 +221,10 @@ body.detail-open #inv{right:calc(var(--detail-w) + 24px)}
   .pick-banner{top:auto;bottom:180px}
   #toast{bottom:170px}
   .chip{padding:7px 12px}
+  #viewSwitch{display:none}
+  #fabs{align-items:flex-end}
+  .view-switch-m{display:flex}
+  #search{font-size:16px}
 }
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 </style>
@@ -231,6 +238,7 @@ body.detail-open #inv{right:calc(var(--detail-w) + 24px)}
     <div id="searchbox" class="glass">
       <a id="brand" href="/" title="YOUtah home" aria-label="YOUtah home">YU</a>
       <input id="search" type="search" autocomplete="off" data-i18n-ph="search" placeholder="Search Utah: places, events, trails…" aria-label="Search" />
+      <nav class="view-switch-m" aria-label="Map view"><a href="/map/simple" data-view="simple" data-i18n="simple">Simple</a><a class="active" href="/map" aria-current="page" data-i18n="advanced">Advanced</a></nav>
     </div>
     <div id="results" class="glass" role="listbox"></div>
   </div>

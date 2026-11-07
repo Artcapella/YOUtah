@@ -26,8 +26,8 @@
           <button class="clear-search" id="clear-search" type="button" aria-label="Clear search" hidden>×</button>
         </form>
         <nav class="view-switch" aria-label="Map view">
-          <a class="active" href="/map/simple" aria-current="page">Simple</a>
-          <a href="/map">Advanced</a>
+          <a class="active" href="/map/simple" aria-current="page" data-view="simple">Simple</a>
+          <a href="/map" data-view="advanced">Advanced</a>
           <a href="/promoters">Promoters</a>
         </nav>
         <button class="header-action" id="plan-launcher" type="button" aria-haspopup="dialog" aria-label="Open saved stops">
@@ -40,7 +40,8 @@
         </button>
       </header>
 
-      <aside class="place-panel" aria-label="Places on the map">
+      <aside class="place-panel" id="place-panel" aria-label="Places on the map">
+        <button class="panel-handle" id="panel-handle" type="button" aria-controls="place-panel" aria-expanded="false" aria-label="Expand places list"><span aria-hidden="true"></span></button>
         <div class="panel-heading">
           <div>
             <p class="eyebrow">Explore nearby</p>
@@ -67,12 +68,13 @@
           <button id="today-launcher" type="button"><span aria-hidden="true">☀</span> Today</button>
           <button id="air-launcher" type="button"><span aria-hidden="true">☁</span> Air guide</button>
           <button id="nearby-launcher" type="button"><span aria-hidden="true">⌖</span> Nearby</button>
+          <button class="mobile-only" id="persona-chip" type="button" aria-haspopup="dialog"><span aria-hidden="true">✦</span> My Utah</button>
         </div>
 
         <p class="result-summary" id="result-summary" aria-live="polite">Loading places…</p>
         <div class="place-list" id="place-list" aria-live="polite"></div>
         <div class="ski-layer-content" id="ski-layer-content" hidden></div>
-        <p class="panel-note"><span class="live-dot"></span> Places are supplied by live and public sources.</p>
+        <p class="panel-note"><span class="live-dot"></span> Places are supplied by live and public sources. <a class="mobile-only" href="/promoters">For promoters →</a></p>
       </aside>
 
       <div class="map-tools" aria-label="Map controls">

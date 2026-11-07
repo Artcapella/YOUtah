@@ -418,6 +418,7 @@ function focusSki(id) {
   const resort = YOUtahSki.find(id);
   if (!resort) return;
   selectedSkiId = id;
+  setPanelExpanded(false);
   skiContent.innerHTML = YOUtahSki.panel({ query: search.value, selectedId: id });
   const mobile = matchMedia("(max-width: 760px)").matches;
   map.flyTo({ center: [resort.coordinate.lng, resort.coordinate.lat], zoom: 13, padding: { top: 70, bottom: mobile ? innerHeight * .46 : 30, left: mobile ? 15 : 370, right: 15 } });
@@ -441,6 +442,7 @@ function toggleSki(enabled) {
   skiEnabled = enabled;
   skiToggle.checked = enabled;
   document.querySelector(".place-panel").classList.toggle("ski-mode", enabled);
+  document.body.classList.toggle("ski-active", enabled);
   list.hidden = enabled;
   summary.hidden = enabled;
   document.querySelector(".category-filters").hidden = enabled;
@@ -461,9 +463,59 @@ function toggleSki(enabled) {
   YOUtahSki.updateTerrain();
 }
 
+const mobileQuery = matchMedia("(max-width: 760px)");
+
+function setPanelExpanded(expanded) {
+  const on = Boolean(expanded) && mobileQuery.matches;
+  document.body.classList.toggle("panel-expanded", on);
+  const handle = document.querySelector("#panel-handle");
+  handle.setAttribute("aria-expanded", String(on));
+  handle.setAttribute("aria-label", on ? "Collapse places list" : "Expand places list");
+}
+
+function wirePanelSheet() {
+  const handle = document.querySelector("#panel-handle");
+  const grabZone = document.querySelector(".place-panel");
+  let startY = null;
+  let startX = 0;
+  let fromHandle = false;
+  handle.addEventListener("click", () => {
+    // A swipe that started on the handle also fires click; the swipe already chose the state.
+    if (handle.dataset.swiped) { delete handle.dataset.swiped; return; }
+    setPanelExpanded(!document.body.classList.contains("panel-expanded"));
+  });
+  // Swipe up/down on the handle or the panel heading to resize; list scrolling is left alone.
+  grabZone.addEventListener("pointerdown", (event) => {
+    if (!mobileQuery.matches || !event.target.closest(".panel-handle, .panel-heading")) return;
+    if (event.target.closest("button:not(.panel-handle)")) return;
+    startY = event.clientY; startX = event.clientX; fromHandle = Boolean(event.target.closest(".panel-handle"));
+  });
+  const end = (event) => {
+    if (startY === null) return;
+    const dy = event.clientY - startY;
+    const dx = Math.abs(event.clientX - startX);
+    startY = null;
+    if (Math.abs(dy) < 28 || dx > Math.abs(dy)) return;
+    if (fromHandle) handle.dataset.swiped = "1";
+    setPanelExpanded(dy < 0);
+  };
+  grabZone.addEventListener("pointerup", end);
+  grabZone.addEventListener("pointercancel", () => { startY = null; });
+  search.addEventListener("focus", () => { if (mobileQuery.matches && !search.value) setPanelExpanded(false); });
+  mobileQuery.addEventListener("change", () => setPanelExpanded(false));
+}
+
+function mapPadding() {
+  if (!mobileQuery.matches) return { top: 70, bottom: 30, left: 370, right: 15 };
+  // Collapsed sheet height (mirrors --sheet-h in simple-map.css); read before any resize animation ends.
+  const sheet = skiEnabled ? Math.min(innerHeight * .46, 410) : innerWidth <= 420 ? Math.min(innerHeight * .42, 345) : Math.min(innerHeight * .44, 370);
+  return { top: 70, bottom: Math.round(sheet) + 12, left: 15, right: 15 };
+}
+
 function focusPlace(place, openPopup) {
   selectedId = place.id;
-  map.flyTo({ center: [place.coordinate.lng, place.coordinate.lat], zoom: Math.max(map.getZoom(), 14), essential: true });
+  setPanelExpanded(false);
+  map.flyTo({ center: [place.coordinate.lng, place.coordinate.lat], zoom: Math.max(map.getZoom(), 14), padding: mapPadding(), essential: true });
   if (openPopup) {
     const marker = markers.find((item) => {
       const position = item.getLngLat();
@@ -619,10 +671,11 @@ function showPlan() {
 }
 
 function bindFeaturePlaces() {
-  featureBody.querySelectorAll("[data-feature-place]").forEach((button) => button.addEventListener("click", () => {
+  featureBody.querySelectorAll("[data-feature-place]").forEach((button) => button.addEventListener("click", async () => {
     if (button.dataset.featurePlace.startsWith("ski:")) {
       closeFeature();
       if (!skiEnabled) toggleSki(true);
+      await YOUtahSki.load();
       focusSki(button.dataset.featurePlace.slice(4));
       return;
     }
@@ -693,6 +746,8 @@ function wireControls() {
   });
 
   personaLauncher.addEventListener("click", openPersona);
+  document.querySelector("#persona-chip").addEventListener("click", openPersona);
+  wirePanelSheet();
   personaClose.addEventListener("click", closePersona);
   personaForm.addEventListener("submit", (event) => {
     event.preventDefault();
