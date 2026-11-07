@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#071d1f" />
+    <meta name="description" content="A live, local-first guide to Utah for newcomers." />
+    <title>Comprehensive Utah</title>
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.2.0/dist/maplibre-gl.css" />
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <main>
+      <nav class="topbar shell" aria-label="Primary navigation">
+        <a class="brand" href="#top" aria-label="Comprehensive Utah home">
+          <span class="brand-mark">⌁</span>
+          <span>comprehensive<br /><strong>utah</strong></span>
+        </a>
+        <div class="nav-links">
+          <a href="#discover">Discover</a>
+          <a href="#escape">Escape inversion</a>
+          <a href="#sources">Data sources</a>
+        </div>
+        <label class="language"><span>Language</span><select aria-label="Language"><option>English</option><option disabled>Español — soon</option><option disabled>中文 — soon</option></select></label>
+      </nav>
+
+      <section class="hero shell" id="top">
+        <div class="hero-copy">
+          <p class="eyebrow">A living field guide for newcomers</p>
+          <h1>Find the Utah<br /><em>locals actually live in.</em></h1>
+          <p class="hero-text">Weather, cleaner-air escapes, transit, events, community spaces, food, and the hyperlocal lore that never makes a tourism brochure.</p>
+          <div class="hero-actions">
+            <a class="button primary" href="#escape">Escape the inversion <span>↗</span></a>
+            <a class="button secondary" href="#discover">Explore the map</a>
+          </div>
+        </div>
+        <aside class="pulse-card" aria-live="polite">
+          <div class="pulse-label"><span class="pulse-dot"></span> Utah right now</div>
+          <div class="metric-row"><div><span class="metric-number" id="temperature">--°</span><span class="metric-caption" id="forecast">Loading conditions</span></div><span class="weather-glyph">☀</span></div>
+          <div class="metric-divider"></div>
+          <div class="air-row"><span><b id="aqi">--</b> AQI</span><span class="air-state" id="air-category">Loading</span></div>
+          <p class="fineprint" id="conditions-updated">Checking live sources…</p>
+        </aside>
+      </section>
+
+      <section class="map-section" id="discover">
+        <div class="shell map-head">
+          <div><p class="eyebrow">Find your footing</p><h2>What feels alive today?</h2></div>
+          <div class="filter-group" role="group" aria-label="Map categories">
+            <button class="filter active" data-filter="all">All</button>
+            <button class="filter" data-filter="trailhead">Outdoors</button>
+            <button class="filter" data-filter="community">Community</button>
+            <button class="filter" data-filter="food">Food</button>
+            <button class="filter" data-filter="art">Local lore</button>
+          </div>
+        </div>
+        <div class="map-frame shell"><div id="map" aria-label="Interactive map of nearby Utah places"></div><div class="map-overlay"><span>●</span> Updated from live & public sources</div></div>
+        <div class="shell place-grid" id="place-grid" aria-live="polite"></div>
+      </section>
+
+      <section class="inversion-section" id="escape">
+        <div class="shell inversion-layout">
+          <div class="inversion-copy">
+            <p class="eyebrow">Made for this particular valley</p>
+            <h2>Escape the inversion.</h2>
+            <p id="inversion-summary">We combine valley air quality, estimated inversion height, elevation, roads, and transit to find an easier breath of fresh air.</p>
+            <div class="inversion-scale"><span>Valley floor</span><div class="scale-line"><i></i></div><span id="cap-label">Estimated cap: --</span></div>
+            <p class="fineprint">This is a planning aid, not a safety clearance. Always check official road, weather, and trail conditions.</p>
+          </div>
+          <div class="recommendations" id="recommendations" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <section class="shell events-section">
+        <div class="section-heading"><div><p class="eyebrow">Make a night of it</p><h2>On the calendar</h2></div><p>Public events, campus happenings, library gatherings, and ticketed shows—merged into one feed.</p></div>
+        <div class="events-grid" id="events-grid" aria-live="polite"></div>
+      </section>
+
+      <section class="shell stories-section">
+        <div class="story-tile whale"><p class="eyebrow">Local lore</p><h3>The Whale has a fan club.<br />Of course it does.</h3><p>Some Utah landmarks are too specific to make an itinerary. Those are often the ones worth finding.</p><span>9th & 9th, Salt Lake City</span></div>
+        <div class="story-tile community"><p class="eyebrow">Your third place</p><h3>Libraries are more than books here.</h3><p>Free events, coworking, classes, community resources, and a warm place to start.</p><a href="#discover">Find a library nearby →</a></div>
+      </section>
+
+      <section class="shell source-section" id="sources">
+        <div><p class="eyebrow">Trust the signal</p><h2>Every recommendation has a source.</h2></div>
+        <div class="source-list" id="source-list" aria-live="polite"></div>
+      </section>
+    </main>
+    <footer class="shell footer"><span>Comprehensive Utah · Built for people who are still learning the grid.</span><a href="/api/health" target="_blank" rel="noreferrer">API health</a></footer>
+    <script src="https://unpkg.com/maplibre-gl@5.2.0/dist/maplibre-gl.js"></script>
+    <script src="/assets/app.js" defer></script>
+  </body>
+</html>
