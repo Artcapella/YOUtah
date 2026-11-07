@@ -179,4 +179,7 @@ button:focus-visible, .guide-message a:focus-visible { outline: 3px solid #8ab4f
 .ski-layer-content { flex: 1; min-height: 0; margin-top: 3px; overflow-y: auto; padding: 0 3px 10px; }
 .ski-layer-content[hidden], .ski-mode .place-list[hidden], .ski-mode .result-summary[hidden], .ski-mode .category-filters[hidden] { display: none; }
 .ski-mode .panel-note { display: none; }
+.ski-mode .quick-actions, .ski-mode .panel-heading { display: none; }
+.ski-mode .ski-layer-toggle { margin-top: 0; }
+.ski-resort-dialog .feature-heading { position: sticky; top: 0; z-index: 1; background: #fff; }
 @media (max-width: 760px) { .ski-layer-toggle { margin-top: 10px; padding: 8px 10px; }.ski-layer-toggle small { display: none; }.ski-mode { height: min(46dvh, 410px); }.ski-mode .panel-heading h1 { font-size: 18px; }.ski-mode .ski-panel-intro h2 { font-size: 19px; } }

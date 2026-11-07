@@ -11,6 +11,7 @@
     if (enabled) {
       ski.load();
       if (!terrain) terrain = ski.attachTerrain(hub.map, () => hub.state.layers.has("ski"));
+      if (!wasEnabled) document.querySelector('[data-tab="layers"]').click();
     }
     ski.updateTerrain();
     const simple = document.querySelector('#viewSwitch a[href^="/map/simple"]');

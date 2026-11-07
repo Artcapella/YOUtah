@@ -403,11 +403,9 @@ function renderSki() {
     element.type = "button";
     element.setAttribute("aria-label", `Ski report for ${resort.name}: ${YOUtahSki.summary(resort)}`);
     element.innerHTML = `<span aria-hidden="true">⛷</span><span><b>${YOUtahSki.escape(resort.name)}</b><small>${YOUtahSki.inches(snow.value)} new · 24h${snow.label.includes("model") ? " model" : ""}</small></span>`;
-    const popup = new maplibregl.Popup({ offset: 20, maxWidth: "350px", className: "ski-popup" }).setHTML(`<h2>${YOUtahSki.escape(resort.name)}</h2>${YOUtahSki.details(resort)}`);
-    const marker = new maplibregl.Marker({ element }).setLngLat([resort.coordinate.lng, resort.coordinate.lat]).setPopup(popup).addTo(map);
-    element.addEventListener("click", () => focusSki(resort.id, false));
+    const marker = new maplibregl.Marker({ element }).setLngLat([resort.coordinate.lng, resort.coordinate.lat]).addTo(map);
+    element.addEventListener("click", () => focusSki(resort.id));
     skiMarkers.push({ id: resort.id, marker });
-    if (selectedSkiId === resort.id) marker.togglePopup();
   }
   if (skiFitPending && resorts.length) {
     skiFitPending = false;
@@ -416,18 +414,27 @@ function renderSki() {
   }
 }
 
-function focusSki(id, openPopup = true) {
+function focusSki(id) {
   const resort = YOUtahSki.find(id);
   if (!resort) return;
   selectedSkiId = id;
-  skiMarkers.forEach(({ id: markerId, marker }) => {
-    const popup = marker.getPopup();
-    if (markerId !== id && popup.isOpen()) popup.remove();
-    if (markerId === id && openPopup && !popup.isOpen()) marker.togglePopup();
-  });
   skiContent.innerHTML = YOUtahSki.panel({ query: search.value, selectedId: id });
   const mobile = matchMedia("(max-width: 760px)").matches;
   map.flyTo({ center: [resort.coordinate.lng, resort.coordinate.lat], zoom: 13, padding: { top: 70, bottom: mobile ? innerHeight * .46 : 30, left: mobile ? 15 : 370, right: 15 } });
+  featureEyebrow.textContent = "Ski trip plan · latest report";
+  featureTitle.textContent = resort.name;
+  const saved = savedPlan.some((place) => place.id === `ski:${id}`);
+  featureBody.innerHTML = `<button class="save-persona" id="save-ski-resort" type="button">${saved ? "✓ Resort saved" : "♡ Save resort to my stops"}</button>${YOUtahSki.details(resort)}`;
+  featureBody.querySelector("#save-ski-resort").addEventListener("click", (event) => {
+    if (!savedPlan.some((place) => place.id === `ski:${id}`)) {
+      savedPlan.push({ id: `ski:${id}`, name: resort.name, description: resort.region, category: "ski", coordinate: resort.coordinate, source_url: resort.website });
+      writePlan();
+    }
+    event.currentTarget.textContent = "✓ Resort saved";
+  });
+  featureDialog.classList.add("ski-resort-dialog");
+  featureDialog.addEventListener("close", () => featureDialog.classList.remove("ski-resort-dialog"), { once: true });
+  openFeature();
 }
 
 function toggleSki(enabled) {
@@ -439,6 +446,8 @@ function toggleSki(enabled) {
   document.querySelector(".category-filters").hidden = enabled;
   skiContent.hidden = !enabled;
   search.placeholder = enabled ? "Search ski resorts or canyons" : "Search Utah places";
+  const advancedLink = document.querySelector('.view-switch a[href^="/map"]:not([href^="/map/simple"])');
+  if (advancedLink) advancedLink.href = enabled ? "/map?ski=1" : "/map";
   if (!enabled) {
     skiMarkers.forEach(({ marker }) => marker.remove());
     skiMarkers = [];
@@ -611,6 +620,12 @@ function showPlan() {
 
 function bindFeaturePlaces() {
   featureBody.querySelectorAll("[data-feature-place]").forEach((button) => button.addEventListener("click", () => {
+    if (button.dataset.featurePlace.startsWith("ski:")) {
+      closeFeature();
+      if (!skiEnabled) toggleSki(true);
+      focusSki(button.dataset.featurePlace.slice(4));
+      return;
+    }
     const place = allPlaces.find((item) => item.id === button.dataset.featurePlace);
     if (place) { closeFeature(); focusPlace(place, true); }
   }));
