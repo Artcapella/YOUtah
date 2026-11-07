@@ -3,6 +3,16 @@ name = "comprehensive-utah"
 version = "0.1.0"
 description = "A Utah discovery dashboard powered by FastAPI and Supabase"
 requires-python = ">=3.11"
+# Vercel installs from here when pyproject.toml exists (requirements.txt is ignored), so keep both in sync.
+dependencies = [
+    "fastapi==0.115.8",
+    "httpx==0.28.1",
+    "pydantic==2.11.10",
+    "pydantic-settings==2.7.1",
+    "python-dotenv==1.0.1",
+    "supabase==2.33.0",
+    "uvicorn[standard]==0.34.0",
+]
 
 [tool.vercel]
 entrypoint = "app:app"
@@ -10,3 +20,10 @@ entrypoint = "app:app"
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+
+# This is an app, not an installable package: install dependencies only.
+[tool.uv]
+package = false
+
+[tool.setuptools]
+packages = []
