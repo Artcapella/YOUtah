@@ -47,6 +47,12 @@ async def map_page() -> FileResponse:
     return FileResponse(PUBLIC_DIR / "map.html")
 
 
+@app.get("/map/simple", include_in_schema=False)
+async def simple_map_page() -> FileResponse:
+    """A focused, north-up street map for everyday place discovery."""
+    return FileResponse(PUBLIC_DIR / "map-simple.html")
+
+
 @app.get("/api/health")
 async def health() -> dict:
     return {

@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
+    { "source": "/map/simple", "destination": "/map-simple.html" },
     { "source": "/map", "destination": "/map.html" }
   ],
   "crons": [

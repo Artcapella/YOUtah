@@ -83,6 +83,10 @@ a.btn{color:var(--ink);text-decoration:none}
 #fabs{position:fixed;z-index:25;right:12px;top:70px;display:flex;flex-direction:column;gap:8px}
 .fab{width:44px;height:44px;border-radius:12px;border:1px solid var(--line);background:rgba(15,38,40,.92);font-weight:700;font-size:14px;display:grid;place-items:center;box-shadow:var(--shadow)}
 .fab.on{background:var(--glacier);color:var(--deeper)}
+#viewSwitch{display:grid;grid-template-columns:repeat(2,1fr);width:112px;padding:3px;border-radius:12px}
+#viewSwitch a{padding:7px 4px;border-radius:8px;color:var(--ink-dim);font-size:11px;font-weight:700;text-align:center;text-decoration:none}
+#viewSwitch a:hover{background:rgba(255,255,255,.09);color:var(--ink)}
+#viewSwitch a.active{background:var(--glacier);color:var(--deeper)}
 
 /* ---------- panel (left sidebar desktop / bottom sheet mobile) ---------- */
 .sheet{position:fixed;z-index:20;display:flex;flex-direction:column;border-radius:var(--r);overflow:hidden}
@@ -236,6 +240,10 @@ body.detail-open #inv{right:calc(var(--detail-w) + 24px)}
 </header>
 
 <div id="fabs">
+  <nav id="viewSwitch" class="glass" aria-label="Map view">
+    <a href="/map/simple">Simple</a>
+    <a class="active" href="/map" aria-current="page">Advanced</a>
+  </nav>
   <button class="fab" id="fab3d" title="Toggle 2D / 3D terrain" aria-label="Toggle 3D terrain">3D</button>
   <button class="fab" id="fabLocate" title="My location" aria-label="My location">◎</button>
   <button class="fab" id="fabSuggest" title="Suggest a spot" aria-label="Suggest a spot" data-i18n-title="suggest">＋</button>

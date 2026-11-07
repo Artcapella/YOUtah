@@ -1,3 +1,7 @@
+# Local Node dependencies (the legacy Node example has been removed, but retain this
+# guard for editors or future tooling).
+node_modules/
+
 # Python
 .venv/
 .venv312/
