@@ -145,4 +145,8 @@ def _secret_matches(provided: str | None, expected: str) -> bool:
 app.include_router(intelligence_router)
 
 
-app.mount("/assets", StaticFiles(directory=PUBLIC_DIR / "assets"), name="assets")
+# Local development serves public/assets itself. On Vercel the CDN serves public/** and the
+# directory is not in the Python function bundle; mounting it unconditionally made the whole
+# API fail at import (FUNCTION_INVOCATION_FAILED on every /api route).
+if (PUBLIC_DIR / "assets").is_dir():
+    app.mount("/assets", StaticFiles(directory=PUBLIC_DIR / "assets"), name="assets")
