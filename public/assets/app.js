@@ -112,11 +112,23 @@ function renderRecommendations(payload) {
 
 async function initializeMap() {
   const config = await fetch(API.config).then(response => response.json()).catch(() => ({}));
+  // OpenFreeMap is keyless street tiles; demotiles only has country outlines, which looks blank at city zoom.
+  const KEYLESS_STYLE = "https://tiles.openfreemap.org/styles/liberty";
   const style = config.maptilerKey
     ? `https://api.maptiler.com/maps/outdoor-v2/style.json?key=${config.maptilerKey}`
-    : "https://demotiles.maplibre.org/style.json";
+    : KEYLESS_STYLE;
   map = new maplibregl.Map({ container: "map", style, center: [-111.8910, 40.7608], zoom: 10.25, attributionControl: true });
   map.addControl(new maplibregl.NavigationControl(), "top-right");
+  let fellBack = style === KEYLESS_STYLE;
+  map.on("error", (event) => {
+    // A rejected MapTiler key surfaces as a 401/403 on the style or tiles; switch once to the keyless basemap.
+    const status = event?.error?.status;
+    if (!fellBack && (status === 401 || status === 403)) {
+      fellBack = true;
+      map.setStyle(KEYLESS_STYLE);
+      map.once("style.load", () => renderMarkers());
+    }
+  });
   map.on("load", () => renderMarkers());
 }
 
