@@ -27,3 +27,5 @@ coverage
 
 # Model training data: EPA AQS downloads and exported CSVs (regenerable, large)
 data/
+
+.venv312/
